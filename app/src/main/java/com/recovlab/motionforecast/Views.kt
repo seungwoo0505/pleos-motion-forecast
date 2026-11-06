@@ -20,6 +20,8 @@ object Palette {
     val BOLT = Color.rgb(250, 200, 40)
     val LEVEL = intArrayOf(Color.rgb(245, 166, 35), Color.rgb(140, 156, 176), Color.rgb(64, 150, 140), Color.rgb(84, 76, 140))
     val LEVEL_BG = intArrayOf(Color.rgb(254, 246, 230), Color.rgb(240, 243, 247), Color.rgb(232, 245, 243), Color.rgb(238, 236, 248))
+    /** 그래프 단계 띠: 맑음 하늘색 → 구름 회색 → 울렁 연보라 → 폭풍 진회색 */
+    val GRAPH_BAND = intArrayOf(Color.rgb(214, 236, 250), Color.rgb(226, 229, 234), Color.rgb(228, 218, 244), Color.rgb(110, 115, 124))
 }
 
 /** 날씨 아이콘 4개: 0 맑음 · 1 구름 · 2 울렁 · 3 폭풍 */
@@ -96,24 +98,30 @@ class ShakeGraphView(context: Context) : View(context) {
         // level bands
         val limits = doubleArrayOf(0.0) + ShakeEngine.LEVEL_LIMITS + doubleArrayOf(yMax)
         for (i in 0 until 4) {
-            p.style = Paint.Style.FILL; p.color = Palette.LEVEL_BG[i]
+            p.style = Paint.Style.FILL; p.color = Palette.GRAPH_BAND[i]
             c.drawRect(padL, Y(minOf(limits[i + 1], yMax)), padL + w, Y(limits[i]), p)
             p.color = Palette.MUTED; p.textSize = 28f
-            c.drawText(Forecast.NAMES[i], 8f, Y((limits[i] + minOf(limits[i + 1], yMax)) / 2) + 8f, p)
+            c.drawText(Forecast.NAMES[i], 8f, Y((limits[i] + minOf(limits[i + 1], yMax)) / 2) + 10f, p)
         }
-        // top-3 windows
-        top.forEachIndexed { i, win ->
-            p.style = Paint.Style.FILL; p.color = Color.argb(30, 220, 60, 50)
-            c.drawRect(X(win.startSec), padT, X(win.endSec), padT + h, p)
-            p.color = Color.rgb(200, 50, 40); p.textSize = 30f; p.isFakeBoldText = true
-            c.drawText("${i + 1}", X(win.startSec) + 4f, padT + 26f, p); p.isFakeBoldText = false
-        }
-        // line
+        // line — white halo so it stays visible on the dark '폭풍' band
         if (points.size > 1) {
-            p.style = Paint.Style.STROKE; p.color = Palette.INK; p.strokeWidth = 4f
             val path = Path(); path.moveTo(X(points[0].first), Y(points[0].second))
             for (pt in points.drop(1)) path.lineTo(X(pt.first), Y(pt.second))
-            c.drawPath(path, p)
+            p.style = Paint.Style.STROKE; p.strokeJoin = Paint.Join.ROUND; p.strokeCap = Paint.Cap.ROUND
+            p.color = Color.WHITE; p.strokeWidth = 10f; c.drawPath(path, p)
+            p.color = Palette.INK; p.strokeWidth = 4f; c.drawPath(path, p)
+        }
+        // top-3: number markers only, at the highest point inside each window
+        top.forEachIndexed { i, win ->
+            val peak = points.filter { it.first >= win.startSec - 1e-6 && it.first < win.endSec }.maxByOrNull { it.second }
+                ?: ((win.startSec + win.endSec) / 2 to win.rms)
+            val x = X(peak.first).coerceIn(padL + 24f, padL + w - 24f)
+            val y = (Y(peak.second) - 34f).coerceIn(padT + 22f, padT + h - 22f)
+            p.style = Paint.Style.FILL; p.color = Color.WHITE; c.drawCircle(x, y, 21f, p)
+            p.style = Paint.Style.STROKE; p.color = Palette.INK; p.strokeWidth = 3f; c.drawCircle(x, y, 21f, p)
+            p.style = Paint.Style.FILL; p.color = Palette.INK; p.textSize = 26f; p.isFakeBoldText = true; p.textAlign = Paint.Align.CENTER
+            c.drawText("${i + 1}", x, y + 9f, p)
+            p.isFakeBoldText = false; p.textAlign = Paint.Align.LEFT
         }
         // axis
         p.style = Paint.Style.FILL; p.color = Palette.MUTED; p.textSize = 28f

@@ -2,6 +2,7 @@
 # 전제: 에뮬레이터 켜짐, adb forward tcp:8088 tcp:8088, 앱에서 목적지·시연 모드를 미리 골라 둠
 param(
     [switch]$Record,
+    [string]$EmuWebm = '',   # 에뮬레이터 자체 녹화(소리 포함, webm). 경로는 영문만
     [string]$OutMp4 = '',
     [string]$Gpx = "$PSScriptRoot\route_gwanghwamun_seoulstation.gpx"
 )
@@ -26,6 +27,11 @@ cmd /c ""$adb" shell am start -n com.recovlab.motionforecast/.MainActivity >nul 
 $gpxJob = Start-Process powershell -ArgumentList '-NoProfile', '-File', "$PSScriptRoot\play_route.ps1", '-Gpx', $Gpx -WindowStyle Hidden -PassThru
 Start-Sleep 2
 
+if ($EmuWebm) {
+    Remove-Item $EmuWebm -ErrorAction SilentlyContinue
+    & $adb emu screenrecord start --time-limit 30 $EmuWebm | Out-Null   # 에뮬레이터가 PC에 직접 기록: 화면 2560x1440 + 소리
+    Start-Sleep -Milliseconds 800
+}
 if ($Record) {
     & $adb shell rm -f /sdcard/motion_demo.mp4 | Out-Null
     $rec = Start-Process $adb -ArgumentList 'shell', 'screenrecord', '--time-limit', '30', '--size', '1920x1080', '--bit-rate', '8000000', '/sdcard/motion_demo.mp4' -WindowStyle Hidden -PassThru
@@ -65,6 +71,7 @@ if ($Record) {
     Start-Sleep 2
     if ($OutMp4) { & $adb pull /sdcard/motion_demo.mp4 $OutMp4 | Out-Null; Stamp "영상 저장 $OutMp4" }
 }
+if ($EmuWebm) { Start-Sleep 3; Stamp ("에뮬레이터 녹화 {0}" -f $EmuWebm) }
 try { Stop-Process -Id $gpxJob.Id -Force } catch {}
 Put '/vehicle/body?door_rl=false'
 Stop-Job $beat; Remove-Job $beat -Force

@@ -36,6 +36,10 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
+import ai.pleos.playground.navi.data.CurrentLocationInfo
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -122,6 +126,8 @@ class MainActivity : Activity() {
     private lateinit var planDetail: TextView
     private lateinit var planPrep: TextView
     private lateinit var planStatus: TextView
+    private lateinit var settingsView: LinearLayout
+    private lateinit var devDetail: TextView
     private lateinit var routeStatus: TextView
     private lateinit var driveText: TextView
     private lateinit var diaryIcon: WeatherIconView
@@ -171,7 +177,17 @@ class MainActivity : Activity() {
 
         // ---------- ① 출발 전 (P) ----------
         planView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(56, 40, 56, 32) }
-        planView.addView(tv(44f, bold = true).apply { text = "멀미 예보" })
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        titleRow.addView(tv(44f, bold = true).apply {
+            text = "멀미 예보"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        titleRow.addView(TextView(this).apply {
+            text = "⋮"; textSize = 44f; setTextColor(Palette.MUTED); setPadding(40, 0, 16, 0)
+            contentDescription = "설정"
+            setOnClickListener { openSettings(true) }
+        })
+        planView.addView(titleRow)
         planView.addView(tv(24f, Palette.MUTED).apply { text = "오늘 길, 뒷자리 날씨를 미리 알려 드려요"; setPadding(0, 0, 0, 22) })
 
         val destRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -199,16 +215,29 @@ class MainActivity : Activity() {
         forecastCard.addView(col)
         planView.addView(forecastCard)
 
-        planStatus = tv(22f, Palette.MUTED).apply { setPadding(4, 26, 0, 8) }
-        planView.addView(planStatus)
-        val toggles = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun toggle(label: String, initial: Boolean, f: (Boolean) -> Unit) = toggles.addView(CheckBox(this).apply {
-            text = label; textSize = 22f; setTextColor(Palette.INK); isChecked = initial; setPadding(0, 0, 40, 0); setOnCheckedChangeListener { _, c -> f(c) }
+        // ---------- 설정 (⋮) — 보정 · 시연 모드 · 개발용 정보 ----------
+        settingsView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(56, 40, 56, 32) }
+        val sTitle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        sTitle.addView(TextView(this).apply {
+            text = "←"; textSize = 40f; setTextColor(Palette.INK); setPadding(0, 0, 28, 0)
+            contentDescription = "돌아가기"; setOnClickListener { openSettings(false) }
         })
+        sTitle.addView(tv(40f, bold = true).apply { text = "설정" })
+        settingsView.addView(sTitle)
+        fun section(t: String) = settingsView.addView(tv(22f, Palette.MUTED, bold = true).apply { text = t; setPadding(0, 36, 0, 8) })
+        fun toggle(label: String, initial: Boolean, f: (Boolean) -> Unit) = settingsView.addView(CheckBox(this).apply {
+            text = label; textSize = 24f; setTextColor(Palette.INK); isChecked = initial; setPadding(8, 10, 0, 10); setOnCheckedChangeListener { _, c -> f(c) }
+        })
+        section("값 보정 (에뮬레이터에서 반대로 들어옴 · 실차 확인 필요)")
         toggle("착석 반대 보정", invertSeat) { invertSeat = it; log("setting invertSeat=$it") }
         toggle("조향 부호 보정", invertSteer) { invertSteer = it; log("setting invertSteer=$it") }
-        toggle("시연 모드 (도착 대기 5초 · 목소리 간격 15초)", demoMode) { setDemo(it) }
-        planView.addView(toggles)
+        section("시연")
+        toggle("시연 모드 (도착 대기 5초 · 목소리 간격 15초 · 구간 3초)", demoMode) { setDemo(it) }
+        section("개발용 정보")
+        planStatus = tv(21f, Palette.MUTED).apply { setPadding(8, 0, 0, 6) }
+        settingsView.addView(planStatus)
+        devDetail = tv(21f, Palette.MUTED).apply { setPadding(8, 0, 0, 0) }
+        settingsView.addView(devDetail)
 
         // ---------- ② 주행 중 (D) — 화면은 자동 차단, 목소리만 ----------
         driveView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(60, 60, 60, 60) }
@@ -238,9 +267,12 @@ class MainActivity : Activity() {
         diaryView.addView(diaryTop); diaryView.addView(diaryNext); diaryView.addView(diaryStats)
         diaryView.addView(Button(this).apply { text = "새 여행"; textSize = 22f; setOnClickListener { show(Phase.PLAN) } })
 
-        for (v in listOf(planView, driveView, diaryView)) root.addView(v, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        for (v in listOf(planView, settingsView, driveView, diaryView)) root.addView(v, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         setContentView(root)
     }
+
+    private var settingsOpen = false
+    private fun openSettings(open: Boolean) { settingsOpen = open; show(phase) }
 
     private fun setDemo(on: Boolean) {
         demoMode = on
@@ -249,8 +281,10 @@ class MainActivity : Activity() {
     }
 
     private fun show(p: Phase) {
+        if (p != phase) settingsOpen = false
         phase = p
-        planView.visibility = if (p == Phase.PLAN) View.VISIBLE else View.GONE
+        planView.visibility = if (p == Phase.PLAN && !settingsOpen) View.VISIBLE else View.GONE
+        settingsView.visibility = if (p == Phase.PLAN && settingsOpen) View.VISIBLE else View.GONE
         driveView.visibility = if (p == Phase.DRIVE || p == Phase.ARRIVING) View.VISIBLE else View.GONE
         diaryView.visibility = if (p == Phase.DIARY) View.VISIBLE else View.GONE
         Log.i(TAG, "phase → $p")
@@ -261,7 +295,13 @@ class MainActivity : Activity() {
         planIcon.level = f.level
         planHeadline.text = "오늘 길, 뒷자리 날씨는 '${Forecast.NAMES[f.level]}'입니다."
         planFacts.text = f.facts()
-        planDetail.text = f.detail() + "  (가정값 기준)"
+        planDetail.text = SpannableStringBuilder().apply {
+            append("%s %.1f km · 혼잡 %.0f%%   ·   흔들림 지수(자체 기준) ".format(Locale.US, f.destination, f.distanceKm, f.congestionRatio * 100))
+            val s = length
+            append("%.2f".format(Locale.US, f.score))
+            setSpan(RelativeSizeSpan(0.75f), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        devDetail.text = "예보 계산: ${f.detail()} — 회전/km + 혼잡 비율 × ${Forecast.CONGESTION_WEIGHT} + 시간(h), 기준 1.5 / 3 / 4.5 (가정값)"
         planPrep.text = "준비 3가지\n" + Forecast.prep(f.level).joinToString("\n") { "  •  $it" }
         log("forecast ${f.detail()} → ${Forecast.NAMES[f.level]} (${f.facts()})")
     }
@@ -292,6 +332,7 @@ class MainActivity : Activity() {
                 Phase.DRIVE -> {
                     stepEngine(now)
                     if (tickCount % 5 == 0) considerVoice(now)
+                    if (tickCount % 20 == 0) try { navi?.getCurrentLocationInfo() } catch (_: Throwable) {}   // 2초마다 내비 주소
                     if (gear == VehicleGear.GEAR_PARK && speedKmh < 1.0) { parkSinceMs = now; doorOpenedSincePark = doorOpen.values.any { it }; show(Phase.ARRIVING); log("P — 도착 확인 시작") }
                 }
                 Phase.ARRIVING -> {
@@ -308,6 +349,7 @@ class MainActivity : Activity() {
         engine = ShakeEngine()
         voice.reset()
         tripLog.clear()
+        synchronized(addrFixes) { addrFixes.clear() }
         driveStartMs = now
         show(Phase.DRIVE)
         val dir = File(filesDir, "trips").apply { mkdirs() }
@@ -349,18 +391,58 @@ class MainActivity : Activity() {
         diaryIcon.level = level
         diaryHeadline.text = "오늘 뒷자리 날씨: ${Forecast.NAMES[level]} — ${REVIEW[level]}"
         diaryTop.text = "가장 흔들린 3구간\n" + if (top.isEmpty()) "  (흔들린 구간 없음)" else top.mapIndexed { i, w ->
-            val where = if (w.lat != null) "  ·  %.4f, %.4f 근처".format(w.lat, w.lon) else ""
-            "  ${"①②③"[i]}  ${fmt(w.startSec)}~${fmt(w.endSec)}  ${if (w.lateral) "좌우" else "앞뒤"} 흔들림 · ${Forecast.NAMES[ShakeEngine.level(w.rms)]} (%.2f m/s²)$where".format(w.rms)
+            // 위치: NaviHelper 주소("중구 세종대로 근처"), 없거나 믿을 수 없으면 경과 시간만
+            val where = placeFor(w) ?: "출발 후 ${fmt(w.startSec)}~${fmt(w.endSec)}"
+            "  ${"①②③"[i]}  $where · ${if (w.lateral) "좌우" else "앞뒤"} 흔들림 · ${Forecast.NAMES[ShakeEngine.level(w.rms)]}"
         }.joinToString("\n")
+        top.forEachIndexed { i, w -> log("top${i + 1} ${fmt(w.startSec)}~${fmt(w.endSec)} rms=%.2f lateral=${w.lateral} gps=${w.lat},${w.lon}".format(w.rms)) }
         val brakes = engine.events.count { it.kind == "급제동" }
         val stopGo = if (dur >= 600) "%.1f회/10분".format(engine.stopGoPer10Min()) else "${engine.stopGoSwitches}번 (10분 미만 주행)"
-        diaryStats.text = "주행 ${fmt(dur)} · 흔들림 지수 %.2f (자체 지수, 의학적 판정 아님) · 정체 반복 $stopGo · 급제동 ${brakes}번(기록만) · 목소리 ${voice.spokenCount}번, 참은 때 ${voice.suppressedCount}번"
-            .format(engine.index()) + (forecast?.let { "  |  출발 전 예보: ${Forecast.NAMES[it.level]}" } ?: "")
+        diaryStats.text = SpannableStringBuilder().apply {
+            append("주행 ${fmt(dur)} · 흔들림 지수(자체 기준) ")
+            val s = length
+            append("%.2f".format(Locale.US, engine.index()))
+            setSpan(RelativeSizeSpan(0.8f), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            append(" · 의학적 판정 아님 · 정체 반복 $stopGo · 급제동 ${brakes}번(기록만) · 목소리 ${voice.spokenCount}번, 참은 때 ${voice.suppressedCount}번")
+            forecast?.let { append("  |  출발 전 예보: ${Forecast.NAMES[it.level]}") }
+        }
         diaryNext.text = "다음엔: " + nextAdvice(level, top, dur)
         show(Phase.DIARY)
         log("도착 — 일기: ${diaryHeadline.text} / ${diaryNext.text} / ${diaryStats.text}")
         val summary = File(csv?.parentFile, (csv?.nameWithoutExtension ?: "trip") + "_summary.txt")
         summary.writeText(listOf(diaryHeadline.text, diaryTop.text, diaryNext.text, diaryStats.text, "", "목소리: ${voice.history}", "", "기록:").joinToString("\n") + "\n" + tripLog.joinToString("\n") + "\n")
+    }
+
+    // ---- NaviHelper 주소 (주행 중 2초마다 getCurrentLocationInfo) ----
+    private data class AddrFix(val tSec: Double, val address: String, val lat: Double, val lon: Double)
+    private val addrFixes = ArrayList<AddrFix>()
+
+    private fun onNaviLocation(info: CurrentLocationInfo) {
+        if (phase != Phase.DRIVE && phase != Phase.ARRIVING) return
+        val t = (SystemClock.elapsedRealtime() - driveStartMs) / 1000.0
+        val addr = info.address ?: ""
+        synchronized(addrFixes) {
+            if (addrFixes.lastOrNull()?.address != addr) log("navi 주소 \"$addr\" (%.5f, %.5f)".format(info.latitude, info.longitude))
+            addrFixes.add(AddrFix(t, addr, info.latitude, info.longitude))
+        }
+    }
+
+    /** "중구 세종대로 근처" — 구간 가운데 시각에 가장 가까운 내비 주소. 내비 위치가 GPS와 1 km 넘게 다르면 믿지 않음. */
+    private fun placeFor(w: ShakeEngine.Window): String? {
+        val mid = (w.startSec + w.endSec) / 2
+        val fix = synchronized(addrFixes) { addrFixes.filter { kotlin.math.abs(it.tSec - mid) <= 10.0 }.minByOrNull { kotlin.math.abs(it.tSec - mid) } }
+        if (fix == null || fix.address.isBlank()) { log("구간 ${fmt(w.startSec)} 주소 없음 → 경과 시간"); return null }
+        if (w.lat != null && w.lon != null) {
+            val d = distanceM(fix.lat, fix.lon, w.lat, w.lon)
+            if (d > 1000) { log("구간 ${fmt(w.startSec)} 내비 주소 \"${fix.address}\" 무시 — 내비 위치와 GPS가 %.1f km 다름 → 경과 시간".format(d / 1000)); return null }
+        }
+        return "${fix.address} 근처"
+    }
+
+    private fun distanceM(a1: Double, o1: Double, a2: Double, o2: Double): Double {
+        val r = 6371000.0; val dLat = Math.toRadians(a2 - a1); val dLon = Math.toRadians(o2 - o1)
+        val h = kotlin.math.sin(dLat / 2).let { it * it } + kotlin.math.cos(Math.toRadians(a1)) * kotlin.math.cos(Math.toRadians(a2)) * kotlin.math.sin(dLon / 2).let { it * it }
+        return 2 * r * kotlin.math.asin(sqrt(h))
     }
 
     private fun nextAdvice(level: Int, top: List<ShakeEngine.Window>, dur: Double): String = when {
@@ -420,6 +502,7 @@ class MainActivity : Activity() {
             routeState = info; maybeForecast()
         }
         override fun onDestinationInfo(info: DestinationInfo) { log("navi destination ${info.name} ${info.remainDistance} m ${info.remainTime} s") }
+        override fun onCurrentLocationInfo(info: CurrentLocationInfo) { main.post { onNaviLocation(info) } }
     }
 
     @Volatile private var routeStartedAt = 0L
