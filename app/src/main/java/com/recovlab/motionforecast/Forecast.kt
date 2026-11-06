@@ -11,10 +11,17 @@ data class Forecast(
     val stopGoSections: Int,
     val durationSec: Int,
 ) {
+    /** 혼잡 비율 = 혼잡 km / 경로 km (0~1) */
+    val congestionRatio: Double get() = if (distanceKm > 0) (congestionKm / distanceKm).coerceIn(0.0, 1.0) else 0.0
+
+    /**
+     * v1.1 (2026-11-06): 혼잡 항을 'km × 0.5'에서 '비율 × 3.0'으로 바꿈 — 긴 경로일수록 혼잡 km가 커져 거의 '폭풍'만 나오던 문제.
+     * 비율 1.0(전 구간 혼잡)이면 3점 = 그것만으로 '울렁' 경계. 가중치 3.0은 가정값.
+     */
     val score: Double
         get() {
             val turnsPerKm = if (distanceKm > 0) turns / distanceKm else 0.0
-            return turnsPerKm * 1.0 + congestionKm * 0.5 + durationSec / 3600.0 * 1.0
+            return turnsPerKm * 1.0 + congestionRatio * CONGESTION_WEIGHT + durationSec / 3600.0 * 1.0
         }
 
     /** 0 맑음 · 1 구름 · 2 울렁 · 3 폭풍 — 맑음 < 1.5 ≤ 구름 < 3 ≤ 울렁 < 4.5 ≤ 폭풍 */
@@ -26,9 +33,10 @@ data class Forecast(
         return "회전 ${turns}번 · 가다 서다 ${stopGoSections}구간 · $time"
     }
 
-    fun detail(): String = String.format(Locale.US, "%s %.1f km · 혼잡 %.1f km · 점수 %.2f", destination, distanceKm, congestionKm, score)
+    fun detail(): String = String.format(Locale.US, "%s %.1f km · 혼잡 %.1f km (%.0f%%) · 점수 %.2f", destination, distanceKm, congestionKm, congestionRatio * 100, score)
 
     companion object {
+        const val CONGESTION_WEIGHT = 3.0
         val NAMES = arrayOf("맑음", "구름", "울렁", "폭풍")
 
         /** 준비 3가지(창가 · 간식 · 쉬는 곳) — 단계별 문구 */
