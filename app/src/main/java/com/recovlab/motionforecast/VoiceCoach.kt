@@ -6,72 +6,102 @@ import ai.pleos.playground.tts.constant.Mode
 import ai.pleos.playground.tts.listener.EventListener
 import ai.pleos.playground.tts.listener.OnInitializeListener
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.SystemClock
 import java.util.Locale
 import kotlin.math.abs
 
 /**
- * 주행 중 목소리 — 설계서 v1 '주행 중 목소리 규칙' 그대로.
- *  - 말하는 대상은 뒷자리 아이, 운전 코칭 안 함
- *  - 10분에 1번 이하, 문장 3초 이내
- *  - 말하지 않는 때: 방향지시등 켜짐 · 조향각 30° 이상 · 브레이크 눌림 · 최근 3초 |a| > 1.5 m/s² · 회전 안내 300 m 이내
- *  - 운전자에게는 1시간 30분 연속 주행 시 한 번만 휴식 제안
- *  - 뒷좌석이 비어 있으면 목소리 끔
- * Pleos TTS 온디바이스 · Locale.KOREA · initialize() 성공 뒤 리스너 (시험에서 확인한 순서)
+ * 주행 중 목소리 — 기획서 v2 3장 '음성 사양' + 설계서 '말하지 않는 때'.
+ *  - 켜고 끄기: 운전자가 출발 전 카드에서 (기본 꺼짐)
+ *  - 문장 2초 이내 목표, 10분에 1번 이하, 한 주행 최대 6번(가정값)
+ *  - 차 안 모두에게 들리는 안내 — 특정 좌석·연령에게 지시하지 않음, '멀미'라는 말 쓰지 않음
+ *  - 말하지 않는 때: 방향지시등 · 조향 30° 이상 · 브레이크 · 최근 3초 |a| > 1.5 · 회전 안내 300 m 이내
+ *  - 운전자 휴식 제안: 1시간 30분 연속 주행 시 1번만
+ *  - 동승자(동승석·2열)가 없으면 조용
+ *  - 음악 재생 중이면 잠깐 낮춤: 내비 안내 용도로 오디오 포커스(GAIN_TRANSIENT_MAY_DUCK) 요청
+ * Pleos TTS 온디바이스 · Locale.KOREA · initialize() 성공 뒤 리스너
  */
-class VoiceCoach(context: Context, private val log: (String) -> Unit) {
+class VoiceCoach(context: Context, private val dryRun: Boolean = false, private val log: (String) -> Unit) {
 
     data class State(
         val tSec: Double,
-        val rearOccupied: Boolean,
+        val passengerPresent: Boolean,
         val turnOn: Boolean,
         val steerDeg: Double?,
         val brake: Boolean,
         val recentMaxAbsAx: Double,   // last 3 s
-        val nextTurnM: Double?,       // NaviHelper TBT distance
+        val nextTurnM: Double?,       // NaviHelper TBT distance to the next maneuver
+        val curvesAhead: Boolean,     // NaviHelper TBT: 2+ maneuvers within 300 m~2 km
         val recentShakeRms: Double,
         val drivingSec: Double,
+        val speedKmh: Double,
     )
 
-    var minIntervalSec = 600.0           // 10분에 1번 이하 (시연 모드에서 줄임)
-    var shakeTriggerRms = ShakeEngine.LEVEL_LIMITS[1]   // '울렁' 이상이면 아이에게 한 마디
+    companion object {
+        const val LINE_CURVE = "곧 굽은 길이에요. 먼 곳을 함께 봐요."
+        const val LINE_REST = "다음 휴게소에서 쉬어 가면 뒷자리 날씨가 맑아져요."
+        const val MAX_PER_TRIP = 6
+    }
+
+    var enabled = false                    // 기본 꺼짐 — 출발 전 카드 토글
+    var minIntervalSec = 600.0             // 10분에 1번 이하 (시연 모드에서 줄임)
+    var shakeTriggerRms = ShakeEngine.LEVEL_LIMITS[1]
     var restAfterSec = 90 * 60.0
 
     var spokenCount = 0; private set
     var suppressedCount = 0; private set
     val history = ArrayList<String>()
+    var lastSpeakMs = 0L; private set      // onStart → onDone (말한 길이 확인용)
 
     private var lastSpokeSec = -1e9
     private var restSuggested = false
     private var ready = false
     private var lastSuppressReason = ""
+    private var startedAt = 0L
 
-    private val tts = TextToSpeech(context.applicationContext, Mode.ON_DEVICE)
+    private val attrs = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    private val audio = context.getSystemService(AudioManager::class.java)
+    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build()
+
+    private val tts: TextToSpeech? = if (dryRun) null else TextToSpeech(context.applicationContext, Mode.ON_DEVICE)
 
     init {
-        tts.initialize(object : OnInitializeListener {
+        tts?.initialize(object : OnInitializeListener {
             override fun onSuccess() {
                 ready = true
                 tts.addEventListener(object : EventListener {
                     override fun onReady() {}
-                    override fun onStart() { log("voice onStart") }
-                    override fun onDone() { log("voice onDone") }
-                    override fun onStop() {}
-                    override fun onError(errorType: ErrorType) { log("voice onError $errorType") }
+                    override fun onStart() { startedAt = SystemClock.elapsedRealtime(); log("voice onStart") }
+                    override fun onDone() {
+                        lastSpeakMs = SystemClock.elapsedRealtime() - startedAt
+                        log("voice onDone (${lastSpeakMs} ms)"); releaseFocus()
+                    }
+                    override fun onStop() { releaseFocus() }
+                    override fun onError(errorType: ErrorType) { log("voice onError $errorType"); releaseFocus() }
                     override fun onUpdatedRms(rms: Double) {}
                 })
                 tts.setLocale(Locale.KOREA)
-                log("voice ready (Pleos TTS ON_DEVICE, ko-KR)")
+                try { tts.setAudioAttributes(attrs) } catch (e: Throwable) { log("voice setAudioAttributes failed $e") }
+                log("voice ready (Pleos TTS ON_DEVICE, ko-KR, 내비 안내 용도)")
             }
             override fun onFailure(errorType: ErrorType) { log("voice init failed $errorType") }
         })
     }
 
-    /** Returns null when nothing to say; otherwise speaks (or records why it stayed quiet). */
+    /** Returns the line spoken (or that would be spoken in dryRun), null otherwise. */
     fun consider(s: State): String? {
-        if (!s.rearOccupied) return null                         // 뒷좌석 비면 목소리 끔
+        if (!enabled) return null
+        if (!s.passengerPresent) return null                       // 동승자 없으면 조용
+        if (spokenCount >= MAX_PER_TRIP) return null               // 한 주행 최대 6번
+        if (s.speedKmh < 10.0) return null                         // 달리는 중에만 (정지·출발 직전에는 말하지 않음)
         val wantRest = !restSuggested && s.drivingSec >= restAfterSec
-        val wantChild = s.recentShakeRms >= shakeTriggerRms && s.tSec - lastSpokeSec >= minIntervalSec
-        if (!wantRest && !wantChild) return null
+        val wantCurve = (s.curvesAhead || s.recentShakeRms >= shakeTriggerRms) && s.tSec - lastSpokeSec >= minIntervalSec
+        if (!wantRest && !wantCurve) return null
 
         val quiet = quietReason(s)
         if (quiet != null) {
@@ -79,9 +109,9 @@ class VoiceCoach(context: Context, private val log: (String) -> Unit) {
             return null
         }
         lastSuppressReason = ""
-        val line = if (wantRest) { restSuggested = true; "다음 휴게소에서 쉬어 가면 뒷자리 날씨가 맑아져요." }
-                   else "창밖 먼 산을 봐요."
-        speak(line, s.tSec)
+        val line = if (wantRest) { restSuggested = true; LINE_REST } else LINE_CURVE
+        val why = if (wantRest) "1시간 30분 연속 주행" else if (s.curvesAhead) "회전 안내상 굽은 길 이어짐" else "최근 흔들림 '${Forecast.NAMES[ShakeEngine.level(s.recentShakeRms)]}'"
+        speak(line, s.tSec, why)
         return line
     }
 
@@ -94,16 +124,21 @@ class VoiceCoach(context: Context, private val log: (String) -> Unit) {
         else -> null
     }
 
-    private fun speak(line: String, tSec: Double) {
+    private fun speak(line: String, tSec: Double, why: String) {
         lastSpokeSec = tSec
         spokenCount++
         history.add(line)
-        log("voice speak: $line")
-        if (ready) try { tts.speak(line, true) } catch (e: Throwable) { log("voice speak failed $e") }
-        else log("voice not ready — 말하지 못함")
+        log("voice speak: $line  (이유: $why, ${spokenCount}/$MAX_PER_TRIP)")
+        if (dryRun) return
+        val g = try { audio.requestAudioFocus(focus) } catch (e: Throwable) { -1 }
+        log("voice audio focus ${when (g) { AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> "GRANTED(음악은 잠깐 낮춤)"; AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> "DELAYED"; else -> "FAILED($g)" }}")
+        if (ready) try { tts?.speak(line, true) } catch (e: Throwable) { log("voice speak failed $e"); releaseFocus() }
+        else { log("voice not ready — 말하지 못함"); releaseFocus() }
     }
+
+    private fun releaseFocus() { try { audio.abandonAudioFocusRequest(focus) } catch (_: Throwable) {} }
 
     fun reset() { lastSpokeSec = -1e9; restSuggested = false; spokenCount = 0; suppressedCount = 0; history.clear(); lastSuppressReason = "" }
 
-    fun release() { try { tts.release() } catch (_: Throwable) {} }
+    fun release() { releaseFocus(); try { tts?.release() } catch (_: Throwable) {} }
 }

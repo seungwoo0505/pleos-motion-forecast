@@ -17,6 +17,8 @@ object Palette {
     val CLOUD = Color.rgb(176, 186, 198)
     val CLOUD_DARK = Color.rgb(96, 104, 118)
     val WAVE = Color.rgb(64, 150, 140)
+    val WAVE_DEEP = Color.rgb(36, 92, 140)
+    val WAVE_LIGHT = Color.rgb(110, 176, 200)
     val BOLT = Color.rgb(250, 200, 40)
     val LEVEL = intArrayOf(Color.rgb(245, 166, 35), Color.rgb(140, 156, 176), Color.rgb(64, 150, 140), Color.rgb(84, 76, 140))
     val LEVEL_BG = intArrayOf(Color.rgb(254, 246, 230), Color.rgb(240, 243, 247), Color.rgb(232, 245, 243), Color.rgb(238, 236, 248))
@@ -38,7 +40,22 @@ class WeatherIconView(context: Context) : View(context) {
             0 -> sun(c, cx, cy, s * 0.22f)
             1 -> { sun(c, cx - s * 0.12f, cy - s * 0.10f, s * 0.15f); cloud(c, cx + s * 0.04f, cy + s * 0.08f, s * 0.30f, Palette.CLOUD) }
             2 -> { cloud(c, cx, cy - s * 0.08f, s * 0.30f, Palette.CLOUD); waves(c, cx, cy + s * 0.20f, s * 0.34f) }
-            else -> { cloud(c, cx, cy - s * 0.08f, s * 0.32f, Palette.CLOUD_DARK); bolt(c, cx, cy + s * 0.02f, s * 0.30f) }
+            else -> bigWaves(c, cx, cy, s)   // 출렁: 큰 물결 (v3 — 번개 그림 쓰지 않음)
+        }
+    }
+
+    /** 출렁 — 높은 물결 3줄 */
+    private fun bigWaves(c: Canvas, x: Float, y: Float, s: Float) {
+        p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
+        val w = s * 0.38f; val amp = s * 0.085f
+        val colors = intArrayOf(Palette.WAVE_DEEP, Palette.WAVE, Palette.WAVE_LIGHT)
+        for (row in 0..2) {
+            p.color = colors[row]; p.strokeWidth = s * 0.055f
+            val yy = y - s * 0.17f + row * s * 0.17f
+            val path = Path(); path.moveTo(x - w, yy)
+            var xx = x - w; var up = true
+            while (xx < x + w - 1f) { path.quadTo(xx + w / 4f, yy + (if (up) -amp * 2 else amp * 2), xx + w / 2f, yy); xx += w / 2f; up = !up }
+            c.drawPath(path, p)
         }
     }
 
@@ -85,12 +102,14 @@ class WeatherIconView(context: Context) : View(context) {
 class ShakeGraphView(context: Context) : View(context) {
     var points: List<Pair<Double, Double>> = emptyList()   // (tSec, rms)
     var top: List<ShakeEngine.Window> = emptyList()
+    var totalSec: Double? = null
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun onDraw(c: Canvas) {
         val padL = 70f; val padR = 20f; val padT = 16f; val padB = 44f
         val w = width - padL - padR; val h = height - padT - padB
-        val tMax = (points.lastOrNull()?.first ?: 1.0).coerceAtLeast(1.0)
+        val tMax = (totalSec ?: points.lastOrNull()?.first ?: 1.0).coerceAtLeast(1.0)
+        longAxis = tMax >= 180
         val yMax = 1.0   // fixed scale so the four bands stay readable; larger values are drawn at the top edge
         fun X(t: Double) = padL + (t / tMax * w).toFloat()
         fun Y(v: Double) = padT + h - (minOf(v, yMax) / yMax * h).toFloat()
@@ -127,9 +146,15 @@ class ShakeGraphView(context: Context) : View(context) {
         p.style = Paint.Style.FILL; p.color = Palette.MUTED; p.textSize = 28f
         val step = niceStep(tMax)
         var t = 0.0
-        while (t <= tMax + 1e-6) { c.drawText(fmtT(t), X(t) - 18f, padT + h + 32f, p); t += step }
+        p.textAlign = Paint.Align.CENTER
+        while (t <= tMax + 1e-6) { c.drawText(fmtT(t), X(t).coerceIn(padL + 20f, width - 36f), padT + h + 32f, p); t += step }
+        p.textAlign = Paint.Align.LEFT
     }
 
-    private fun niceStep(tMax: Double) = listOf(5.0, 10.0, 30.0, 60.0, 300.0, 600.0, 1800.0).firstOrNull { tMax / it <= 8 } ?: 3600.0
-    private fun fmtT(t: Double): String { val s = t.toInt(); return if (s >= 60) "${s / 60}분" + (if (s % 60 != 0) "${s % 60}" else "") else "${s}초" }
+    // 가로축 분 단위 (v3): 3분 이상이면 "5분 10분 …", 짧은 시연은 "0:05" 꼴
+    private fun niceStep(tMax: Double) =
+        if (tMax >= 180) listOf(60.0, 120.0, 300.0, 600.0, 900.0, 1800.0).firstOrNull { tMax / it <= 9 } ?: 3600.0
+        else listOf(5.0, 10.0, 15.0, 30.0, 60.0).firstOrNull { tMax / it <= 8 } ?: 60.0
+    private var longAxis = false
+    private fun fmtT(t: Double): String { val s = t.toInt(); return if (longAxis) "${s / 60}분" else "%d:%02d".format(s / 60, s % 60) }
 }
