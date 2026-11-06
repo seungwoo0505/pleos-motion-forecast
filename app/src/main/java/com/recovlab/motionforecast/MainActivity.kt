@@ -130,6 +130,7 @@ class MainActivity : Activity() {
     private lateinit var devDetail: TextView
     private lateinit var routeStatus: TextView
     private lateinit var driveText: TextView
+    private lateinit var driveTitle: TextView
     private lateinit var diaryIcon: WeatherIconView
     private lateinit var diaryHeadline: TextView
     private lateinit var diaryGraph: ShakeGraphView
@@ -241,7 +242,8 @@ class MainActivity : Activity() {
 
         // ---------- ② 주행 중 (D) — 화면은 자동 차단, 목소리만 ----------
         driveView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(60, 60, 60, 60) }
-        driveView.addView(tv(44f, bold = true).apply { text = "주행 중 — 화면은 쉬고, 목소리로 챙겨요"; gravity = Gravity.CENTER })
+        driveTitle = tv(44f, bold = true).apply { text = DRIVE_TITLE; gravity = Gravity.CENTER }
+        driveView.addView(driveTitle)
         driveText = tv(26f, Palette.MUTED).apply { gravity = Gravity.CENTER; setPadding(0, 30, 0, 0) }
         driveView.addView(driveText)
 
@@ -287,6 +289,7 @@ class MainActivity : Activity() {
         settingsView.visibility = if (p == Phase.PLAN && settingsOpen) View.VISIBLE else View.GONE
         driveView.visibility = if (p == Phase.DRIVE || p == Phase.ARRIVING) View.VISIBLE else View.GONE
         diaryView.visibility = if (p == Phase.DIARY) View.VISIBLE else View.GONE
+        driveTitle.text = if (p == Phase.ARRIVING) ARRIVING_TITLE else DRIVE_TITLE
         Log.i(TAG, "phase → $p")
     }
 
@@ -316,7 +319,7 @@ class MainActivity : Activity() {
             val t = engine.durationSec()
             driveText.text = "기록 ${"%.0f".format(t)}초 · ${"%.0f".format(speedKmh)} km/h · 조향 $st · 흔들림 ${"%.2f".format(engine.recentRms(5.0))} m/s²\n" +
                 "목소리 ${voice.spokenCount}번 · 참은 때 ${voice.suppressedCount}번" +
-                (if (phase == Phase.ARRIVING) "\n도착 확인 중 — P ${"%.0f".format((SystemClock.elapsedRealtime() - parkSinceMs) / 1000.0)}초 / ${arrivalWaitSec.toInt()}초 · 문 열림 ${if (doorOpenedSincePark) "예" else "아직"}" else "")
+                (if (phase == Phase.ARRIVING) "\nP ${"%.0f".format((SystemClock.elapsedRealtime() - parkSinceMs) / 1000.0)}초 / ${arrivalWaitSec.toInt()}초 · 문 열림 ${if (doorOpenedSincePark) "예" else "아직"}" else "")
         }
     }
 
@@ -333,6 +336,7 @@ class MainActivity : Activity() {
                     stepEngine(now)
                     if (tickCount % 5 == 0) considerVoice(now)
                     if (tickCount % 20 == 0) try { navi?.getCurrentLocationInfo() } catch (_: Throwable) {}   // 2초마다 내비 주소
+                    if (tickCount % 30 == 0 && SystemClock.elapsedRealtime() - lastFixMs > 3000) { log("위치가 3초 넘게 안 옴 → FusedLocation 다시 등록"); registerFused() }
                     if (gear == VehicleGear.GEAR_PARK && speedKmh < 1.0) { parkSinceMs = now; doorOpenedSincePark = doorOpen.values.any { it }; show(Phase.ARRIVING); log("P — 도착 확인 시작") }
                 }
                 Phase.ARRIVING -> {
@@ -350,6 +354,7 @@ class MainActivity : Activity() {
         voice.reset()
         tripLog.clear()
         synchronized(addrFixes) { addrFixes.clear() }
+        registerFused()   // 다시 설치한 직후 첫 등록이 서비스 연결 전에 빠지는 일이 있어 주행 시작 때 한 번 더
         driveStartMs = now
         show(Phase.DRIVE)
         val dir = File(filesDir, "trips").apply { mkdirs() }
@@ -625,7 +630,11 @@ class MainActivity : Activity() {
     // =====================================================================
     // Pleos FusedLocation — 기록용 위치
     private val fusedListener = object : FusedLocationListener {
-        override fun onChanged(data: LocationData?) { if (data != null) { lat = data.latitude; lon = data.longitude } }
+        override fun onChanged(data: LocationData?) {
+            if (data == null) return
+            if (lastFixMs == 0L) log("fused 첫 위치 %.5f, %.5f".format(data.latitude, data.longitude))
+            lat = data.latitude; lon = data.longitude; lastFixMs = SystemClock.elapsedRealtime()
+        }
         override fun onError(exception: Exception) { log("fused error ${exception.message}") }
     }
 
@@ -634,10 +643,12 @@ class MainActivity : Activity() {
         catch (e: Throwable) { log("fused init threw $e") }
     }
 
+    @Volatile private var lastFixMs = 0L
+
     private fun registerFused() {
         val f = fused ?: return
         try { f.unregisterFusedLocationCallback(fusedListener) } catch (_: Throwable) {}
-        try { f.registerFusedLocationCallback(fusedListener) } catch (e: Throwable) { log("fused register failed ${e.message}") }
+        try { f.registerFusedLocationCallback(fusedListener); Log.i(TAG, "fused registered") } catch (e: Throwable) { log("fused register failed ${e.message}") }
     }
 
     override fun onNewIntent(intent: Intent?) { super.onNewIntent(intent); log("onNewIntent") }
@@ -664,6 +675,8 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "MotionForecast"
+        private const val DRIVE_TITLE = "주행 중 — 화면은 쉬고, 목소리로 챙겨요"
+        private const val ARRIVING_TITLE = "도착 확인 중 — 문을 열면 승차감 일기가 열려요"
         private val DESTINATIONS = listOf(
             Triple("판교역", 37.394761, 127.111217),
             Triple("서울역", 37.554648, 126.970702),
