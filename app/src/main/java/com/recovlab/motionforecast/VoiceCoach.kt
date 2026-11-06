@@ -41,7 +41,8 @@ class VoiceCoach(context: Context, private val dryRun: Boolean = false, private 
     )
 
     companion object {
-        const val LINE_CURVE = "곧 굽은 길이에요. 먼 곳을 함께 봐요."
+        // v3.1: 2초 안에 맞춤 — 에뮬레이터 녹음으로 잰 말 길이 1.78초 (기획서 v2 문장 "곧 굽은 길이에요. 먼 곳을 함께 봐요."는 2.46초)
+        const val LINE_CURVE = "굽은 길, 먼 곳을 함께 봐요."
         const val LINE_REST = "다음 휴게소에서 쉬어 가면 뒷자리 날씨가 맑아져요."
         const val MAX_PER_TRIP = 6
     }
@@ -134,6 +135,13 @@ class VoiceCoach(context: Context, private val dryRun: Boolean = false, private 
         log("voice audio focus ${when (g) { AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> "GRANTED(음악은 잠깐 낮춤)"; AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> "DELAYED"; else -> "FAILED($g)" }}")
         if (ready) try { tts?.speak(line, true) } catch (e: Throwable) { log("voice speak failed $e"); releaseFocus() }
         else { log("voice not ready — 말하지 못함"); releaseFocus() }
+    }
+
+    /** 개발용: 규칙 없이 바로 말하기 (문장 길이 재기). 횟수에 넣지 않음 */
+    fun speakTest(line: String) {
+        log("voice test: $line")
+        if (!ready) { log("voice not ready"); return }
+        try { audio.requestAudioFocus(focus); tts?.speak(line, true) } catch (e: Throwable) { log("voice test failed $e"); releaseFocus() }
     }
 
     private fun releaseFocus() { try { audio.abandonAudioFocusRequest(focus) } catch (_: Throwable) {} }

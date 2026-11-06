@@ -43,7 +43,7 @@ $t0 = Get-Date
 Stamp 't0  P — 출발 전 날씨 카드'
 Start-Sleep -Milliseconds ([int]($PlanSec * 1000))
 
-# v3 순서 (기획서 v2 부록 C-8): 출발 전 → 곧은 길 출발(“곧 굽은 길” 음성) → 굽은 길 → 정지 → 도착 일기
+# v3 순서 (기획서 v2 부록 C-8): 출발 전 → 곧은 길 출발(“굽은 길, 먼 곳을 함께 봐요.” 음성) → 굽은 길 → 정지 → 도착 일기
 Stamp ("D — 출발: 곧은 길 {0}초 (0→24 km/h, 약 1.1 m/s² — 10 km/h 넘으면 목소리)" -f $StraightSec)
 Put '/vehicle/gear?gear=Drive'
 $sw = [Diagnostics.Stopwatch]::StartNew()

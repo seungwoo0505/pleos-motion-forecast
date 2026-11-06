@@ -789,7 +789,12 @@ class MainActivity : Activity() {
         try { f.registerFusedLocationCallback(fusedListener); Log.i(TAG, "fused registered") } catch (e: Throwable) { log("fused register failed ${e.message}") }
     }
 
-    override fun onNewIntent(intent: Intent?) { super.onNewIntent(intent); log("onNewIntent") }
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent); log("onNewIntent")
+        // 개발용 빌드에서만: 문장 길이 재기 — am start -n …/.MainActivity --es say "문장"
+        val say = intent?.getStringExtra("say")
+        if (say != null && (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) voice.speakTest(say)
+    }
 
     override fun onDestroy() {
         main.removeCallbacksAndMessages(null)
