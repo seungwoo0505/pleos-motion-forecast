@@ -194,7 +194,7 @@ class MainActivity : Activity() {
         planView = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(56, 36, 56, 28) }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         titleRow.addView(tv(44f, bold = true).apply {
-            text = "멀미 예보"
+            text = "승차감·흔들림 예보"
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
         titleRow.addView(TextView(this).apply {
@@ -495,7 +495,7 @@ class MainActivity : Activity() {
         }
         diaryGraph.points = per; diaryGraph.top = top; diaryGraph.totalSec = dur; diaryGraph.invalidate()
         diaryIcon.level = level
-        diaryHeadline.text = Forecast.ARRIVE_LINE[level]
+        diaryHeadline.text = (if (example) "[예시 데이터] " else "") + Forecast.ARRIVE_LINE[level]
         diaryVs.text = vsLine(fc, level, e, dur)
         diaryTop.text = "가장 흔들린 3구간\n" + if (top.isEmpty()) "  (흔들린 구간 없음)" else top.mapIndexed { i, w ->
             // 위치: NaviHelper 주소("중구 세종대로 근처"), 없거나 믿을 수 없으면 경과 시간만
@@ -511,7 +511,7 @@ class MainActivity : Activity() {
             val s = length
             append("%.2f".format(Locale.US, e.index()))
             setSpan(RelativeSizeSpan(0.8f), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            append(" · 의학적 판정 아님 · 정체 반복 $stopGo · 급제동 ${brakes}번(기록만) · 목소리 ${spoken}번, 참은 때 ${suppressed}번")
+            append(" · 의학적 판정 아님 · 정체 반복 $stopGo · 급제동 ${brakes}번(기록만) · 목소리 ${spoken}번" + if (suppressed > 0) " · 운전에 집중할 땐 조용히 있었어요" else "")
         }
         diaryNext.text = "다음엔: " + nextAdvice(level, top, dur, e)
     }
@@ -565,9 +565,10 @@ class MainActivity : Activity() {
     }
 
     private fun nextAdvice(level: Int, top: List<ShakeEngine.Window>, dur: Double, e: ShakeEngine): String = when {
-        e.stopGoPer10Min() >= 3.0 && dur > 120 -> "30분 일찍 출발하면 가다 서다가 줄어요."
+        e.stopGoPer10Min() >= 3.0 && dur > 120 -> "가다 서다가 많았어요. 출발 시간도 참고해 보세요."
         level >= 2 && top.firstOrNull()?.lateral == true -> "굽은 길이 시작되기 전에 쉬는 곳에 한 번 들러요."
-        level >= 2 -> "가다 서다 구간 앞에서 쉬는 곳에 한 번 들러요."
+        level >= 2 && e.stopGoSwitches > 0 -> "가다 서다 구간 앞에서 쉬는 곳에 한 번 들러요."
+        level >= 2 -> "흔들린 구간 앞에서 쉬는 곳에 한 번 들러요."
         dur > 3600 -> "중간에 쉬는 곳을 한 번 넣어 보세요."
         else -> "오늘처럼 가면 돼요."
     }

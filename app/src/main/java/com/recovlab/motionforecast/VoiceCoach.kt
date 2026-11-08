@@ -43,7 +43,7 @@ class VoiceCoach(context: Context, private val dryRun: Boolean = false, private 
     companion object {
         // v3.1: 2초 안에 맞춤 — 에뮬레이터 녹음으로 잰 말 길이 1.78초 (기획서 v2 문장 "곧 굽은 길이에요. 먼 곳을 함께 봐요."는 2.46초)
         const val LINE_CURVE = "굽은 길, 먼 곳을 함께 봐요."
-        const val LINE_REST = "다음 휴게소에서 쉬어 가면 뒷자리 날씨가 맑아져요."
+        const val LINE_REST = "다음 휴게소에서 쉬어 가요."
         const val MAX_PER_TRIP = 6
     }
 
