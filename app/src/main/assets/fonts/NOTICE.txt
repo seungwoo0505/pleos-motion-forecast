@@ -1,0 +1,3 @@
+NotoSansKR-VF.ttf — Noto Sans KR (variable, wght 100-900), bundled unmodified.
+(c) 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name Source.
+Licensed under the SIL Open Font License, Version 1.1 — http://scripts.sil.org/OFL

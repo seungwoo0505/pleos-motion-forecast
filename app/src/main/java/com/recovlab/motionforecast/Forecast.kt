@@ -51,6 +51,9 @@ data class Forecast(
             "오늘은 출렁! 쉬어 가는 길로 가요.",
         )
 
+        /** 예보 카드의 큰 글자 아래 한 줄 — "오늘은 울렁!"은 큰 글자가 말하므로 뒷부분만 */
+        val PLAN_SAY = PLAN_LINE.map { it.substringAfter("! ") }
+
         /** 캐릭터 말투 — 도착 후 한 줄 */
         val ARRIVE_LINE = arrayOf(
             "도착! 오늘도 다 같이 잘 왔어요.",

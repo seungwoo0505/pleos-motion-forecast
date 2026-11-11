@@ -25,6 +25,7 @@
     <uses-permission android:name="android.permission.REORDER_TASKS" />
 
     <application
+        android:icon="@mipmap/ic_launcher"
         android:label="승차감·흔들림 예보"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         <activity
