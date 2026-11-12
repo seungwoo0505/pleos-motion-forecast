@@ -1,38 +1,90 @@
-# 멀미 예보 (Motion Forecast) — MVP
+# 승차감·흔들림 예보 (Motion Forecast)
 
-Pleos Connect(AAOS) 차량용 앱. 아이 멀미를 날씨처럼 예보하고, 달리는 동안 목소리로 챙기고, 도착하면 승차감 일기를 남깁니다.
-현대차 Pleos 앱 공모전용 최소 동작 앱(2026-11-06). **비공개 저장소** — 외부 공개 금지.
+출발 전에 오늘 길의 흔들림을 날씨처럼 알려 주고, 달리는 동안에는 화면 없이 꼭 필요한 순간에만 짧게 말하고, 도착하면 승차감 일기를 남기는 **Pleos Connect 차량용 동승자 케어 앱**입니다.
 
-- 설계: 「멀미 예보」 설계 v1 (공모전 폴더 `1. 기획/261106_Claude_멀미예보_설계v1.md`) 그대로
-- 패키지: `com.recovlab.motionforecast` (시험 앱 `com.recovlab.pleosdash`와 별도)
+> 이 앱은 의학적 판단이나 멀미 예방 효과를 주장하지 않습니다. 내비 경로의 사실과 차량 신호로 계산한 흔들림(자체 기준)을 보여 줍니다. 경로를 바꾸거나 차량 주행을 제어하지 않습니다.
 
-## 흐름
 | 때 | 화면 | 소리 |
 |---|---|---|
-| 출발 전 (P) | 목적지 → NaviHelper 경로 → 회전 안내 수 · 혼잡 · 남은 시간으로 **흔들림 날씨 카드** 4단계(맑음 · 구름 · 울렁 · 폭풍) + 준비 3가지 | — |
-| 주행 중 (D) | 자동 차단 (CarUxRestrictions) | Pleos TTS 온디바이스 한 마디 (목소리 규칙 · 말하지 않는 조건) |
-| 도착 (P 30초 + 문 열림) | **승차감 일기**: 흔들림 그래프 · 가장 흔들린 3구간 · 다음 추천 한 줄 | — |
+| 출발 전 (기어 P) | **흔들림 예보 카드** — 네 단계(맑음 · 구름 · 울렁 · 출렁), 근거 사실 3가지, 준비 3가지. 화면 아래 바다의 물빛과 물결 높이가 단계에 따라 달라짐 | — |
+| 주행 중 (기어 D) | 없음 (플랫폼의 주행 중 화면 제한으로 가려짐) | 굽은 길 앞에서 짧은 목소리 안내 한 번: "굽은 길, 먼 곳을 함께 봐요." |
+| 도착 (P + 문 열림) | **승차감 일기** — 구간별 색 칸, 가장 흔들린 3곳, 예보와 실제 비교, 다음 여행 팁 | — |
 
-## 계산 (설계서 2장, 모두 가정값)
-- a_x = dv/dt (속도 1초 이동 평균 후 미분), a_y ≈ v²·tan(δ/14.5)/2.9 (조향각 없으면 v·Δheading/Δt)
-- 0.1~0.5 Hz 성분 제곱 → 시간 누적 → 제곱근 = 흔들림 지수 (MSDV 개념 참고 자체 지수, 의학적 판정 아님)
-- 출발 전 점수 = 회전/km + **혼잡 비율 × 3.0** + 시간(h), 맑음 < 1.5 ≤ 구름 < 3 ≤ 울렁 < 4.5 ≤ 폭풍
-  (v1.1: 설계 v1의 '혼잡 km × 0.5'는 긴 경로가 거의 '폭풍'만 나와 비율로 바꿈)
-- 보정 스위치: 착석 반대(기본 켬), 조향 부호(기본 켬) — 에뮬레이터에서 값이 반대로 들어옴
+## APK 파일 위치
 
-## 파일
-- `ShakeEngine.kt` 흔들림 계산 · `Forecast.kt` 출발 전 날씨 · `VoiceCoach.kt` 목소리 규칙 · `Views.kt` 날씨 아이콘 4개 · 그래프 · `MainActivity.kt` 화면 · 입력
-- `demo/run_demo.ps1` 30초 시연 (Virtual Console API + GPX 재생 + 화면 녹화)
+`apk/` 폴더의 `*_release.apk` (release 빌드, 버전 0.4, 패키지 `com.recovlab.motionforecast`)
 
-## 빌드 · 실행
+## 실행 방법
+
+1. Pleos Connect Emulator를 켭니다(콜드 부트).
+2. APK를 설치합니다.
+   ```
+   adb install -r apk/<파일 이름>_release.apk
+   ```
+3. 앱 목록에서 **승차감·흔들림 예보**를 엽니다. 처음 실행할 때 위치 · 차량 속도 권한을 허용합니다.
+   ```
+   adb shell am start -n com.recovlab.motionforecast/.MainActivity
+   ```
+4. **출발 전(P):** 오른쪽 위 `목적지`를 눌러 목적지를 고르면 예보 카드가 뜹니다(내비 앱이 잠깐 앞으로 나오면 다시 이 앱을 엽니다). 탑승자(아이 · 어른 · 어르신)를 고르면 목소리 안내를 켤지 한 번 묻습니다.
+5. **주행 중(D):** Virtual Console에서 동승석이나 2열 좌석을 착석으로 두고 기어를 D로 바꾼 뒤 속도를 올립니다. 앱 화면은 플랫폼이 가립니다. 목소리 안내가 켜져 있고 시속 10 km 이상이며 말하는 조건이 맞으면 한 번 말합니다.
+6. **도착:** 기어 P로 두고 30초 뒤(설정의 시연 모드에서는 5초) 문을 열면 승차감 일기가 열립니다.
+7. 주행 없이 일기 화면만 보려면: 출발 전 화면의 `⋮` → **예시 주행 40분의 승차감 일기 보기** (시뮬레이션 데이터이며 화면에 "예시 데이터"로 표시됩니다).
+
+## 테스트 환경 및 필요한 설정
+
+- **차량 조작:** Pleos Virtual Console — 기어(P/D), 속도, 조향, 좌석 착석, 문 열림
+- **권한:** 위치(`ACCESS_FINE_LOCATION`), 차량 속도(`android.car.permission.CAR_SPEED`), `pleos.car.permission.FUSED_LOCATION`은 실행 중에 허용을 묻습니다. 나머지 Pleos 권한은 매니페스트 선언만으로 동작합니다.
+- **설정(⋮):** `착석 반대 보정` · `조향 부호 보정`이 기본으로 켜져 있습니다. 에뮬레이터에서 값이 반대로 들어와서 넣은 보정이며 실제 차량에서는 확인이 필요합니다. `시연 모드`는 도착 대기 5초 · 목소리 간격 15초로 줄입니다.
+- **경로 값:** 예보는 에뮬레이터 내비(NaviHelper)가 준 경로의 회전 안내 수 · 혼잡 구간 · 소요 시간으로 계산합니다. 같은 목적지도 시각에 따라 값이 달라져 예보 단계가 달라질 수 있습니다.
+- **목소리가 나오지 않는 경우:** 다음 회전 안내가 300 m 이내인 경로에서는 규칙대로 말하지 않습니다. 에뮬레이터 내비는 차량 위치를 따라 움직이지 않아 이 거리가 고정되어 있습니다(시험에서는 서울역 낮 경로가 700 m, 밤 경로와 판교역은 80 m).
+- **확인 범위:** 에뮬레이터와 Virtual Console에서만 확인했습니다. 실제 차량에서는 확인하지 않았습니다.
+
+## 개발에 사용한 Pleos Connect 에뮬레이터 버전과 화면 규격
+
+| 항목 | 값 |
+|---|---|
+| 에뮬레이터 | Pleos Connect Emulator v2.1 (AAOS, Android 14) |
+| 화면 | 2560 × 1440 px, 160 dpi |
+| 앱이 그려지는 칸 | 1680 × 1208 px (화면 왼쪽은 차량 화면, 아래는 메뉴 줄) |
+| 화면 그리기 | 설계 좌표 1680 × 1208에 그리고 실제 칸 폭에 맞춰 늘림 (`Screens.kt`) |
+
+## 사용 SDK · API
+
+| 핵심 기능에서의 쓰임 | SDK · API |
+|---|---|
+| 예보: 경로 · 회전 안내 · 혼잡 · 소요 시간 | Pleos NaviHelper 3.0.5 |
+| 주행 중 목소리 안내 | Pleos TextToSpeech 3.3.1 (On-device, 한국어) |
+| 동승자 유무 · 도착 판단 · 말하지 않는 조건: 착석 · 문 · 조향각 · 방향지시등 · 브레이크 | Pleos Vehicle SDK 2.3.2 |
+| 주행 기록의 위치 | Pleos FusedLocation 1.1.3 |
+| 흔들림 계산 · 주행 시작 판단: 속도 · 기어 | AAOS CarPropertyManager (`PERF_VEHICLE_SPEED`, `GEAR_SELECTION`) |
+| 내비 안내 · 통화 우선 | Android AudioFocus |
+
+## 소스 구조
+
+| 파일 | 내용 |
+|---|---|
+| `app/src/main/java/.../MainActivity.kt` | 주행 단계(출발 전 · 주행 · 도착 확인 · 일기), SDK 연결, 기록 |
+| `Screens.kt` | 화면 그리기 — 예보 카드, 대기 화면, 승차감 일기 |
+| `Forecast.kt` | 출발 전 예보 계산과 문구 |
+| `ShakeEngine.kt` | 주행 흔들림 계산 |
+| `VoiceCoach.kt` | 목소리 규칙(말하는 조건 · 말하지 않는 5가지) |
+| `demo/` | 에뮬레이터 시연 · 캡처 · 영상 스크립트 (Virtual Console API + GPX 재생) |
+
+## 계산 (자체 기준, 모두 가정값)
+
+- 예보 점수 = 회전 수 ÷ 거리(km) + 혼잡 비율 × 3.0 + 소요 시간(h). 맑음 < 1.5 ≤ 구름 < 3 ≤ 울렁 < 4.5 ≤ 출렁
+- 주행 흔들림: 앞뒤 = 속도 변화율, 좌우 = 속도² × tan(조향각 ÷ 조향비) ÷ 축거. 느린 흔들림(약 0.1~0.5 Hz) 성분을 누적(ISO 2631-1의 멀미 노출값 개념을 참고한 자체 지수)
+- 목소리: 기본 꺼짐. 한 주행 최대 6번, 10분에 1번 이하, 문장 2초 이내. 방향지시등 · 조향 30° 이상 · 브레이크 · 급한 가감속 · 회전 안내 300 m 이내에는 말하지 않음
+
+## 빌드
+
 ```
 gradlew.bat assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+gradlew.bat assembleRelease
 ```
-Pleos Connect Emulator v2.1, `local.properties`에 `sdk.dir` 필요. 시연: 앱에서 목적지·시연 모드 선택 → `powershell -File demo/run_demo.ps1 -Record -OutMp4 <경로>`.
 
-## 시험에서 정해진 함정
-- Pleos TTS: `pleos.car.permission.TTS_SERVICE`, `initialize()` 성공 뒤 `addEventListener()`, `setLocale(Locale.KOREA)`
-- `pleos.car.permission.FUSED_LOCATION`은 dangerous → 실행 중 요청
-- NaviHelper `requestRoute`는 내비 앱을 앞으로 띄움, 경로 상태 값은 새 경로 시작 뒤 다시 요청해야 맞음
-- Virtual Console API는 `/browser/session` heartbeat가 있어야 받고, 속도는 정수만 받음
+`local.properties`에 `sdk.dir`이 필요합니다. release 서명은 저장소 밖의 설정 파일이 있을 때만 적용됩니다(`app/build.gradle.kts` 참고).
+
+## 글꼴
+
+Noto Sans KR (SIL Open Font License 1.1) — `app/src/main/assets/fonts/NOTICE.txt`

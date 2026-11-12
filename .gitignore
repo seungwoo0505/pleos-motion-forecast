@@ -7,5 +7,6 @@ local.properties
 *.iml
 captures/
 *.apk
+!apk/*.apk
 *.aab
 _captures/
