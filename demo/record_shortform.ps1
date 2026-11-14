@@ -4,7 +4,8 @@
 # 좌표는 Pleos Connect Emulator v2.1 (2560x1440), 앱 칸은 (854, 91)에서 시작
 param(
     [Parameter(Mandatory = $true)][string]$OutDir,        # 영문 경로만
-    [string[]]$Seg = @('ui', 'levels', 'diary', 'drive'),
+    [string[]]$Seg = @('ui', 'levels', 'look', 'diary', 'drive'),
+    [string]$Fc = '',                                     # '|23.0|14|13.0|10|4080' — 서울역 예보 카드를 전에 기록해 둔 경로 값으로 다시 그림 (개발용 빌드)
     [string]$Gpx = "$PSScriptRoot\route_gwanghwamun_seoulstation.gpx"
 )
 $ErrorActionPreference = 'Continue'
@@ -29,6 +30,8 @@ function RecStart([string]$name, [int]$limit) {
 function Mark([string]$label) { $t = '{0:N1}' -f $script:sw.Elapsed.TotalSeconds; Add-Content -Path $script:marks -Value "$t`t$label" -Encoding utf8; Write-Host "  $t  $label" }
 function RecStop { Mark '끝'; & $adb emu screenrecord stop | Out-Null; Start-Sleep 3 }
 
+function Dev([string]$extra) { & $adb shell "am start --activity-single-top -n $pkg/.MainActivity $extra" 2>$null | Out-Null }   # 개발용 빌드에만 있는 기능
+function Replay { if ($Fc) { Dev "--es fc '$Fc'"; Start-Sleep 2 } }
 # 목적지 고르기: 0 판교역 · 1 서울역 · 2 강릉역 (내비 앱이 앞으로 나왔다가 돌아옴)
 function PickDest([int]$i) { Tap 2254 150 2.0; Tap 2200 (254 + 88 * $i) 14; Front }
 
@@ -44,6 +47,7 @@ if ($Seg -contains 'ui') {
     Mark '목적지 알약 누름'; Tap 2254 150 2.5
     Mark '서울역 누름 (내비 앱이 앞으로)'; Tap 2200 342 14
     Front
+    if ($Fc) { Mark '기록해 둔 경로 값으로 다시 그림'; Replay }
     Mark '예보 카드'; Start-Sleep 13
     Mark '아이 누름 → 목소리 묻기'; Tap 1111 1209 3.5
     Mark '켜기 누름'; Tap 1958 793 4.5
@@ -63,6 +67,15 @@ if ($Seg -contains 'levels') {
     RecStop
 }
 
+if ($Seg -contains 'look') {
+    Write-Host '== look: 단계별 모습 — 맑음 · 구름 · 울렁 · 출렁 (개발용 빌드, 숫자는 단계마다 달라 가림)'
+    PickDest 1
+    RecStart 'look' 50
+    foreach ($lv in 0..3) { Dev "--ei look $lv"; Start-Sleep -Milliseconds 700; Mark ('단계 ' + $lv + ' ' + @('맑음', '구름', '울렁', '출렁')[$lv]); Start-Sleep 8 }
+    RecStop
+    Dev '--ei look -1'
+}
+
 if ($Seg -contains 'diary') {
     Write-Host '== diary: 예시 주행 40분 승차감 일기'
     RecStart 'diary' 45
@@ -77,7 +90,7 @@ if ($Seg -contains 'diary') {
 if ($Seg -contains 'drive') {
     Write-Host '== drive: 서울역 예보 → 주행(목소리) → 도착 확인 → 승차감 일기(길게)'
     & $adb shell settings put system show_touches 0 | Out-Null
-    PickDest 1
+    PickDest 1; Replay
     Tap 2428 150 2.0; Tap 1100 588 1.0; Tap 959 144 1.5        # 설정 → 시연 모드 → 돌아가기
     $beat = Start-Job -ScriptBlock { param($u) while ($true) { try { Invoke-RestMethod -Method Post -Uri "$u/browser/session?client=shortform-rec" -TimeoutSec 3 | Out-Null } catch {}; Start-Sleep -Milliseconds 600 } } -ArgumentList $vc
     Start-Sleep 2
