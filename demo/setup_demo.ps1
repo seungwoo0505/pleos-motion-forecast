@@ -1,6 +1,7 @@
 ﻿# 시연 준비: 앱 다시 켜기 → 목적지(서울역) → 탑승자 '아이' → 목소리 안내 켜기 → 설정에서 시연 모드
 # 좌표는 Pleos Connect Emulator v2.1 (2560x1440) 기준 — 앱 칸은 (854, 91)에서 시작, 화면 설계 좌표(1680×1208)에 더하면 됨 (v4 화면)
-param([int]$Dest = 1)
+#  -Fc '|23.0|14|13.0|10|4080' 을 주면 목적지를 고른 뒤 예보 카드를 전에 기록해 둔 경로 값으로 다시 그린다 (개발용 빌드)
+param([int]$Dest = 1, [string]$Fc = '')
 $adb = 'C:\Android\Sdk\platform-tools\adb.exe'
 function Tap([int]$x, [int]$y, [int]$waitMs = 1500) { & $adb shell input tap $x $y; Start-Sleep -Milliseconds $waitMs }
 function Front { cmd /c "`"$adb`" shell am start -n com.recovlab.motionforecast/.MainActivity >nul 2>nul"; Start-Sleep 2 }
@@ -11,6 +12,7 @@ function Front { cmd /c "`"$adb`" shell am start -n com.recovlab.motionforecast/
 Tap 2254 150 1200           # 목적지 알약 → 고르기
 Tap 2200 (254 + 88 * $Dest) 15000   # 0 판교역 · 1 서울역 · 2 강릉역 (내비 앱이 앞으로 나옴)
 Front
+if ($Fc) { & $adb shell "am start --activity-single-top -n com.recovlab.motionforecast/.MainActivity --es fc '$Fc'" 2>$null | Out-Null; Start-Sleep 2 }
 Tap 1111 1209 2000          # 탑승자: 아이 → "목소리 안내를 켤까요?"
 Tap 1958 793 1500           # 켜기
 Tap 2428 150 2000           # ⋮ 설정

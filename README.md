@@ -12,7 +12,7 @@
 
 ## APK 파일 위치
 
-`apk/` 폴더의 `*_release.apk` (release 빌드, 버전 0.4, 패키지 `com.recovlab.motionforecast`)
+`apk/` 폴더의 `*_release.apk` (release 빌드, 버전 0.5, 패키지 `com.recovlab.motionforecast`)
 
 ## 실행 방법
 

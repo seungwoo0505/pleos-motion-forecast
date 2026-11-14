@@ -4,6 +4,7 @@ param(
     [switch]$Record,
     [string]$EmuWebm = '',   # 에뮬레이터 자체 녹화(소리 포함, webm). 경로는 영문만
     [double]$PlanSec = 2, [double]$StraightSec = 5,
+    [double]$Accel = 4.0, [double]$StopSec = 4,     # 출발 가속(km/h 매초) · 멈추는 데 걸리는 초 — PC가 바빠 에뮬레이터가 끊길 때는 낮추고 늘린다(11-14: 3.2 · 5)
     [double]$CurveSec = 6, [double]$CurveSteer = 22, [double]$CurveSpeedAmp = 1,   # 굽은 길 조작값 (실제 단계를 예보와 맞출 때 조정)
     [string]$OutMp4 = '',
     [string]$Gpx = "$PSScriptRoot\route_gwanghwamun_seoulstation.gpx"
@@ -43,21 +44,24 @@ Stamp 't0  P — 출발 전 날씨 카드'
 Start-Sleep -Milliseconds ([int]($PlanSec * 1000))
 
 # v3 순서 (기획서 v2 부록 C-8): 출발 전 → 곧은 길 출발(“굽은 길, 먼 곳을 함께 봐요.” 음성) → 굽은 길 → 정지 → 도착 일기
-Stamp ("D — 출발: 곧은 길 {0}초 (0→24 km/h, 약 1.1 m/s² — 10 km/h 넘으면 목소리)" -f $StraightSec)
+Stamp ("D — 출발: 곧은 길 {0}초 (매초 {1} km/h씩, 약 {2:N1} m/s² — 10 km/h 넘으면 목소리)" -f $StraightSec, $Accel, ($Accel / 3.6))
 Put '/vehicle/gear?gear=Drive'
 $sw = [Diagnostics.Stopwatch]::StartNew()
-while ($sw.Elapsed.TotalSeconds -lt $StraightSec) { Ctl ([math]::Min(24, $sw.Elapsed.TotalSeconds * 4.0)) 0; Start-Sleep -Milliseconds 150 }
+while ($sw.Elapsed.TotalSeconds -lt $StraightSec) { Ctl ([math]::Min(24, $sw.Elapsed.TotalSeconds * $Accel)) 0; Start-Sleep -Milliseconds 150 }
 Stamp ("굽은 길 {0}초 — 조향 ±{1}°, 속도 24±{2} km/h" -f $CurveSec, $CurveSteer, $CurveSpeedAmp)
 $sw.Restart()
 while ($sw.Elapsed.TotalSeconds -lt $CurveSec) {
     $t = $sw.Elapsed.TotalSeconds
-    Ctl (24 + $CurveSpeedAmp * [math]::Sin(2 * [math]::PI * 0.25 * $t)) ($CurveSteer * [math]::Sin(2 * [math]::PI * 0.25 * $t))
+    $base = [math]::Min(24, [math]::Min(24, $StraightSec * $Accel) + $t * $Accel)   # 곧은 길에서 못 채운 속도를 같은 기울기로 마저 올림 (갑자기 뛰지 않게)
+    Ctl ($base + $CurveSpeedAmp * [math]::Sin(2 * [math]::PI * 0.25 * $t)) ($CurveSteer * [math]::Sin(2 * [math]::PI * 0.25 * $t))
     Start-Sleep -Milliseconds 150
 }
 Ctl 24 0; Start-Sleep 1
 
 Stamp '멈춤 → P'
-foreach ($s in 23, 21, 20, 18, 17, 15, 14, 12, 11, 9, 8, 6, 5, 3, 2, 0) { Ctl $s 0; Start-Sleep -Milliseconds 250 }   # 4초에 걸쳐 정지 (약 1.7 m/s²)
+$sw.Restart()
+while ($sw.Elapsed.TotalSeconds -lt $StopSec) { Ctl ([math]::Max(0, 24 * (1 - $sw.Elapsed.TotalSeconds / $StopSec))) 0; Start-Sleep -Milliseconds 150 }   # StopSec초에 걸쳐 고르게 정지 (4초면 약 1.7 m/s²)
+Ctl 0 0
 Put '/vehicle/gear?gear=Park'
 Start-Sleep 1
 Stamp '뒷문(왼쪽) 열림'

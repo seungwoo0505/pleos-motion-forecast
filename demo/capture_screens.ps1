@@ -1,6 +1,7 @@
 ﻿# v4 화면 캡처 한 번에: 처음 화면 → 목적지 고르기 → 예보 카드 → 목소리 묻기 → 아이·목소리 켬 → 설정 → 예시 주행 40분 일기
 # 좌표는 Pleos Connect Emulator v2.1 (2560x1440) 기준. 결과는 -OutDir 에 <Prefix>NN_이름.png
-param([string]$OutDir = "$PSScriptRoot\..\_captures", [int]$Dest = 1, [string]$Prefix = '', [switch]$CardOnly)
+#  -Fc '|23.0|14|13.0|10|4080' 을 주면 예보 카드를 찍은 뒤, 전에 기록해 둔 경로 값으로 다시 그려서 나머지를 찍는다 (개발용 빌드, 값: 목적지|km|굽은 길|혼잡 km|가다 서다|초)
+param([string]$OutDir = "$PSScriptRoot\..\_captures", [int]$Dest = 1, [string]$Prefix = '', [switch]$CardOnly, [string]$Fc = '')
 $adb = 'C:\Android\Sdk\platform-tools\adb.exe'
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 function Tap([int]$x, [int]$y, [int]$waitMs = 1500) { & $adb shell input tap $x $y; Start-Sleep -Milliseconds $waitMs }
@@ -17,6 +18,7 @@ if (-not $CardOnly) { Shot '00_목적지_고르기' }
 Tap 2200 (254 + 88 * $Dest) 15000    # 목적지 (내비 앱이 앞으로 나옴)
 Front
 Shot "01_예보카드_${destName}"
+if ($Fc) { & $adb shell "am start --activity-single-top -n com.recovlab.motionforecast/.MainActivity --es fc '$Fc'" 2>$null | Out-Null; Start-Sleep 2; Shot "01_예보카드_${destName}_기록값" }
 if ($CardOnly) { & $adb logcat -d -s MotionForecast | Select-String ': forecast ' | Select-Object -Last 1 | ForEach-Object { $_.Line -replace '^.*MotionForecast: ', '' }; return }
 Tap 1111 1209 2000                   # 탑승자: 아이 → "목소리 안내를 켤까요?"
 Shot '02_목소리안내_묻기'

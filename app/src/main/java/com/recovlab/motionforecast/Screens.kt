@@ -21,35 +21,38 @@ import kotlin.math.sin
 /**
  * 화면 공통 값 — 색 · 글꼴 · 단계별 물빛.
  * 겉모습 v4: 물결 예보 카드 + 색 칸 승차감 일기 (시안: 3. 개발/v4_시안_261111, 형님 선택 11-11)
+ * 색 v5: 짜임은 그대로, 색만 파랑 한 가지 계열로 — 흰 하늘 · 파랑 바다 · 검정 글자 (시안: 3. 개발/v5_시안_261114 색 1, 형님 선택 11-14)
  */
 object Ui {
     fun rgb(v: Int): Int = (0xFF shl 24) or v
 
-    val INK = rgb(0x14304A)
-    val SUB = rgb(0x58708A)
-    val PAPER = rgb(0xF3F7F9)
-    val FAINT = rgb(0x9DB3C2)
-    val SUN = rgb(0xF0B429)
+    val INK = rgb(0x0A0B0D)
+    val SUB = rgb(0x5B616E)
+    val PAPER = rgb(0xF5F7FA)
+    val FAINT = rgb(0xA8B3C7)
+    val SUN = rgb(0xF4B000)
+    /** 하나뿐인 강조 색 — 울렁 단계의 물빛이자 '켜기' 단추 */
+    val BLUE = rgb(0x0052FF)
 
     /** 하늘 2색 + 물결 3겹 + 깊은 물 */
     class Pal(val sky1: Int, val sky2: Int, val w1: Int, val w2: Int, val w3: Int, val deep: Int)
 
-    /** 0 맑음 · 1 구름 · 2 울렁 · 3 출렁 — 단계가 오를수록 물빛이 깊어짐 */
+    /** 0 맑음 · 1 구름 · 2 울렁 · 3 출렁 — 단계가 오를수록 파랑이 짙어짐 (구름만 회청색) */
     val PAL = arrayOf(
-        Pal(rgb(0xDCEFFA), rgb(0xF7FBFD), rgb(0xBFE4EE), rgb(0x7CC6D6), rgb(0x3597B0), rgb(0x237A93)),
-        Pal(rgb(0xE4EBF1), rgb(0xF7F9FA), rgb(0xC3D3DC), rgb(0x8FAABA), rgb(0x5F8497), rgb(0x4A6E82)),
-        Pal(rgb(0xE3F1F4), rgb(0xF6FAF9), rgb(0xA9D8D3), rgb(0x5CB0A9), rgb(0x2F8F8A), rgb(0x1E6E70)),
-        Pal(rgb(0xDAE4EE), rgb(0xF3F6FA), rgb(0xA9BFD6), rgb(0x5E86B0), rgb(0x24527F), rgb(0x183F66)),
+        Pal(rgb(0xDDEAFF), rgb(0xFFFFFF), rgb(0xCFE0FF), rgb(0x8FB6FF), rgb(0x4D8DFF), rgb(0x2F6FEB)),
+        Pal(rgb(0xE6E9EF), rgb(0xFFFFFF), rgb(0xD3D9E4), rgb(0xA1AEC6), rgb(0x687A9A), rgb(0x4F6080)),
+        Pal(rgb(0xDCE7FF), rgb(0xFFFFFF), rgb(0xB9CFFF), rgb(0x5C8FFF), rgb(0x0052FF), rgb(0x003ECC)),
+        Pal(rgb(0xDCE2EF), rgb(0xFAFBFD), rgb(0xA9B8D6), rgb(0x3F63B8), rgb(0x0A2A8C), rgb(0x061A5C)),
     )
 
     /** 예보가 아직 없을 때 (목적지 고르기 전 · 주행 중 대기 화면) */
-    val IDLE = Pal(rgb(0xE2EEF3), rgb(0xF7FAFB), rgb(0xC4DCE5), rgb(0x8DB9C8), rgb(0x4F8FA5), rgb(0x3B7A90))
+    val IDLE = Pal(rgb(0xE3EBF8), rgb(0xFFFFFF), rgb(0xCBD9F2), rgb(0x97B2E2), rgb(0x5B84CC), rgb(0x4169B3))
 
     /** 단계별 물결 높이 */
     val AMP = floatArrayOf(3f, 10f, 22f, 40f)
 
     /** 일기의 색 칸 — 흔들릴수록 진하게 */
-    val TILE = intArrayOf(rgb(0xCFE6F2), rgb(0xA9BCC9), rgb(0x3F9E98), rgb(0x1D4775))
+    val TILE = intArrayOf(rgb(0xDCE8FF), rgb(0xA9C4FF), rgb(0x3D7BFF), rgb(0x0A2A8C))
 
     private val faces = HashMap<Int, Typeface>()
 
@@ -80,6 +83,10 @@ abstract class SceneView(context: Context) : View(context) {
     private val wavePath = Path()
     private val tmp = RectF()
 
+    /** 물결을 흘릴지 — 주행 중에는 차가 화면을 가리므로 멈춘다 (화면 그리기가 주행 기록 주기를 밀지 않게) */
+    var animate = true
+        set(v) { field = v; if (v) invalidate() }
+
     init { isClickable = true }
 
     abstract fun scene(c: Canvas)
@@ -91,7 +98,7 @@ abstract class SceneView(context: Context) : View(context) {
         c.save(); c.scale(k, k)
         scene(c)
         c.restore()
-        if (isShown) postInvalidateDelayed(40)   // 물결이 천천히 흐름 — 화면이 보일 때만
+        if (isShown && animate) postInvalidateDelayed(40)   // 물결이 천천히 흐름 — 화면이 보일 때만
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -211,17 +218,17 @@ abstract class SceneView(context: Context) : View(context) {
     protected fun levelIcon(c: Canvas, level: Int, x: Float, y: Float, size: Float) {
         val s = size / 200f
         when (level) {
-            0 -> sun(c, x, y, size, rgb(0xE9A920))
-            1 -> cloud(c, x, y + 38f * s, s, rgb(0xB9C4D0))
+            0 -> sun(c, x, y, size, Ui.SUN)
+            1 -> cloud(c, x, y + 38f * s, s, rgb(0xB8C2D6))
             2 -> {
-                cloud(c, x + 12f * s, y + 2f * s, 0.88f * s, rgb(0xB9C4D0))
-                squiggle(c, x + 16f * s, y + 142f * s, 168f * s, -9f * s, 84f * s, 11f * s, rgb(0x2F8F8A))
-                squiggle(c, x + 16f * s, y + 174f * s, 168f * s, -9f * s, 84f * s, 11f * s, rgb(0x63B3AD))
+                cloud(c, x + 12f * s, y + 2f * s, 0.88f * s, rgb(0xB8C2D6))
+                squiggle(c, x + 16f * s, y + 142f * s, 168f * s, -9f * s, 84f * s, 11f * s, Ui.BLUE)
+                squiggle(c, x + 16f * s, y + 174f * s, 168f * s, -9f * s, 84f * s, 11f * s, rgb(0x7FA8FF))
             }
             else -> {
-                squiggle(c, x + 16f * s, y + 58f * s, 168f * s, -17f * s, 84f * s, 15f * s, rgb(0x1F4A78))
-                squiggle(c, x + 16f * s, y + 102f * s, 168f * s, -17f * s, 84f * s, 15f * s, rgb(0x2F8F8A))
-                squiggle(c, x + 16f * s, y + 146f * s, 168f * s, -17f * s, 84f * s, 15f * s, rgb(0x63B3AD))
+                squiggle(c, x + 16f * s, y + 58f * s, 168f * s, -17f * s, 84f * s, 15f * s, rgb(0x0A2A8C))
+                squiggle(c, x + 16f * s, y + 102f * s, 168f * s, -17f * s, 84f * s, 15f * s, Ui.BLUE)
+                squiggle(c, x + 16f * s, y + 146f * s, 168f * s, -17f * s, 84f * s, 15f * s, rgb(0x7FA8FF))
             }
         }
     }
@@ -260,6 +267,8 @@ class PlanScene(context: Context) : SceneView(context) {
     var destinations: List<String> = emptyList()
     var menuOpen = false
     var askVoice = false
+    /** 개발용 빌드에서만 쓰는 값: 단계별 모습 보기 (0~3). 숫자는 단계마다 달라서 가림 */
+    var lookLevel: Int? = null
     var onPickDest: (Int) -> Unit = {}
     var onPassenger: (Passenger) -> Unit = {}
     var onVoice: (Boolean) -> Unit = {}
@@ -268,7 +277,7 @@ class PlanScene(context: Context) : SceneView(context) {
 
     override fun scene(c: Canvas) {
         val f = forecast
-        val level = f?.level
+        val level = if (f != null) lookLevel ?: f.level else null
         val pal = if (level != null) Ui.PAL[level] else Ui.IDLE
         sky(c, pal)
 
@@ -277,7 +286,7 @@ class PlanScene(context: Context) : SceneView(context) {
         else {
             val drift = 8f * sin(tSec * 0.25f)
             cloud(c, 1200f + drift, 164f, 1.65f, alpha(Ui.INK, 0.06f))
-            cloud(c, 1200f + drift, 150f, 1.65f, if (level == 3) rgb(0xC4D0DD) else Color.WHITE)
+            cloud(c, 1200f + drift, 150f, 1.65f, if (level == 3) rgb(0xC5CEE0) else Color.WHITE)
         }
 
         // 네 단계 — 물결 크기로 보는 범례 (위가 출렁)
@@ -288,12 +297,12 @@ class PlanScene(context: Context) : SceneView(context) {
         }
 
         // 큰 글자
-        if (f != null) {
+        if (f != null && level != null) {
             text(c, "${f.destination} 가는 길, 오늘은", 72f, 132f, 40f, 500, Ui.SUB)
-            text(c, Forecast.NAMES[f.level], 64f, 190f, 252f, 800, Ui.INK, boxH = 257f, ls = -0.04f)
-            text(c, Forecast.PLAN_SAY[f.level], 72f, 451f, 46f, 600, Ui.INK)
+            text(c, Forecast.NAMES[level], 64f, 190f, 252f, 800, Ui.INK, boxH = 257f, ls = -0.04f)
+            text(c, Forecast.PLAN_SAY[level], 72f, 451f, 46f, 600, Ui.INK)
             // 근거 세 가지
-            var x = 72f
+            var x = if (lookLevel == null) 72f else 9999f
             val h = f.durationSec / 3600; val m = (f.durationSec % 3600) / 60
             val time = if (h > 0 && m > 0) "${h}시간 $m" to "분" else if (h > 0) "$h" to "시간" else "$m" to "분"
             for ((label, num, unit) in listOf(Triple("굽은 길", "${f.turns}", "번"), Triple("가다 서다", "${f.stopGoSections}", "구간"), Triple("걸리는 시간", time.first, time.second))) {
@@ -312,11 +321,11 @@ class PlanScene(context: Context) : SceneView(context) {
         sea(c, vh - 495f, pal, if (level != null) Ui.AMP[level] else 6f, 1f + (level ?: 0) * 0.3f)
 
         // 준비 3가지 (물 위의 흰 카드)
-        if (f != null) {
+        if (f != null && level != null) {
             val head = when (passenger) { Passenger.CHILD -> "아이와 함께라면"; Passenger.ADULT -> "어른과 함께라면"; Passenger.SENIOR -> "어르신과 함께라면"; null -> "오늘 챙길 것" }
             text(c, head, 72f, 846f + dy, 30f, 700, Color.WHITE)
             val cw = (1536f - 40f) / 3f
-            Forecast.prep(f.level, passenger).forEachIndexed { i, s ->
+            Forecast.prep(level, passenger).forEachIndexed { i, s ->
                 val l = 72f + i * (cw + 20f)
                 rr(c, l, 900f + dy, l + cw, 1004f + dy, 26f, alpha(Color.WHITE, 0.95f))
                 textFit(c, s, l + 32f, 900f + dy, 104f, 34f, 26f, 600, Ui.INK, cw - 64f)
@@ -393,10 +402,10 @@ class PlanScene(context: Context) : SceneView(context) {
         text(c, "차 안 모두에게 들려요.", l + 56f, t + 192f, 34f, 500, Ui.SUB)
         val by = b - 56f - 92f
         val yesL = r - 56f - 240f; val noL = yesL - 24f - 240f
-        rr(c, yesL, by, yesL + 240f, by + 92f, 46f, Ui.INK)
+        rr(c, yesL, by, yesL + 240f, by + 92f, 46f, Ui.BLUE)
         text(c, "켜기", yesL + 120f, by, 36f, 700, Color.WHITE, Paint.Align.CENTER, 92f)
         hit(yesL, by, yesL + 240f, by + 92f) { askVoice = false; onAskVoice(true) }
-        rr(c, noL, by, noL + 240f, by + 92f, 46f, rgb(0xE8EFF3))
+        rr(c, noL, by, noL + 240f, by + 92f, 46f, rgb(0xEEF0F3))
         text(c, "나중에", noL + 120f, by, 36f, 600, Ui.INK, Paint.Align.CENTER, 92f)
         hit(noL, by, noL + 240f, by + 92f) { askVoice = false; onAskVoice(false) }
     }

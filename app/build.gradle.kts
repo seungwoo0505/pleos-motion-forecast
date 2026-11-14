@@ -16,8 +16,8 @@ android {
         applicationId = "com.recovlab.motionforecast"
         minSdk = 30
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4"
+        versionCode = 5
+        versionName = "0.5"
     }
 
     // release 서명: 저장소 밖의 설정 파일(~/.boneul/motionforecast_signing.properties)이 있을 때만.

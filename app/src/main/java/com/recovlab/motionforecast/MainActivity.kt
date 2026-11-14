@@ -97,6 +97,9 @@ class MainActivity : Activity() {
     private var phase = Phase.PLAN
     private var engine = ShakeEngine()
     private var driveStartMs = 0L
+    private var lastStepMs = 0L      // 마지막으로 기록한 칸의 시각 (0.1초 간격을 지키는 데 씀)
+    private var catchUps = 0         // 이번 주행에서 밀린 차례를 채운 횟수
+    private var maxCatch = 1         // 한 번에 가장 많이 채운 칸 수
     private var parkSinceMs = 0L
     private var doorOpenedSincePark = false
     private var csv: File? = null
@@ -242,6 +245,7 @@ class MainActivity : Activity() {
         settingsView.visibility = if (p == Phase.PLAN && settingsOpen) View.VISIBLE else View.GONE
         wait.visibility = if (p == Phase.DRIVE || p == Phase.ARRIVING) View.VISIBLE else View.GONE
         wait.arriving = p == Phase.ARRIVING; wait.level = forecast?.level
+        wait.animate = p != Phase.DRIVE   // 주행 중에는 차가 화면을 가림 — 물결을 멈춰 기록 주기를 지킴
         diary.visibility = if (p == Phase.DIARY) View.VISIBLE else View.GONE
         Log.i(TAG, "phase → $p")
     }
@@ -277,7 +281,12 @@ class MainActivity : Activity() {
             when (phase) {
                 Phase.PLAN, Phase.DIARY -> if (gear == VehicleGear.GEAR_DRIVE) startTrip(now)
                 Phase.DRIVE -> {
-                    stepEngine(now)
+                    // 다른 처리에 밀려 이 차례가 늦게 와도 기록은 0.1초 간격을 지킨다 — 빠진 칸은 지금 값으로 채움.
+                    // (채우지 않으면 '1초' 창이 실제보다 길어져 속도 변화를 크게 재고, 실제 단계가 높게 나온다. 11-14 확인)
+                    val n = ((now - lastStepMs + 50) / 100).toInt().coerceIn(1, 20)
+                    if (n > 1) { catchUps++; if (n > maxCatch) maxCatch = n }
+                    repeat(n) { stepEngine(lastStepMs + 100L * (it + 1)) }
+                    lastStepMs += 100L * n
                     if (tickCount % 5 == 0) considerVoice(now)
                     if (tickCount % 20 == 0) try { navi?.getCurrentLocationInfo() } catch (_: Throwable) {}   // 2초마다 내비 주소
                     if (tickCount % 30 == 0 && SystemClock.elapsedRealtime() - lastFixMs > 3000) { log("위치가 3초 넘게 안 옴 → FusedLocation 다시 등록"); registerFused() }
@@ -299,7 +308,7 @@ class MainActivity : Activity() {
         tripLog.clear()
         synchronized(addrFixes) { addrFixes.clear() }
         registerFused()   // 다시 설치한 직후 첫 등록이 서비스 연결 전에 빠지는 일이 있어 주행 시작 때 한 번 더
-        driveStartMs = now
+        driveStartMs = now; lastStepMs = now; catchUps = 0; maxCatch = 1
         show(Phase.DRIVE)
         val dir = File(filesDir, "trips").apply { mkdirs() }
         csv = File(dir, "trip_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".csv").also {
@@ -344,6 +353,7 @@ class MainActivity : Activity() {
         renderDiary(engine, forecast, voice.spokenCount, voice.suppressedCount, example = false, topWindowSec = if (demoMode) 3.0 else 30.0)
         show(Phase.DIARY)
         log("도착 — 일기: " + diaryText.replace("\n", " / "))
+        log("기록 주기: 밀린 차례를 ${catchUps}번 채움 (한 번에 가장 많이 ${maxCatch}칸)")
         val summary = File(csv?.parentFile, (csv?.nameWithoutExtension ?: "trip") + "_summary.txt")
         summary.writeText(diaryText + "\n\n목소리: ${voice.history} (마지막 말한 길이 ${voice.lastSpeakMs} ms)\n\n기록:\n" + tripLog.joinToString("\n") + "\n")
     }
@@ -505,7 +515,7 @@ class MainActivity : Activity() {
     }
 
     private fun requestRoute(name: String, la: Double, lo: Double) {
-        destName = name; routeStart = null; tbt = emptyList(); routeState = null; forecast = null; routeStartedAt = 0L
+        destName = name; routeStart = null; tbt = emptyList(); routeState = null; forecast = null; routeStartedAt = 0L; replay = null
         plan.destName = name; plan.forecast = null; plan.busy = true; plan.error = null; plan.menuOpen = false; plan.invalidate()
         log("requestRoute $name ($la, $lo)")
         try { navi?.requestRoute(RouteInfo(la, lo, null, null, name, "", "", "", RouteOption.RECOMMENDED, "", false)) }
@@ -544,6 +554,8 @@ class MainActivity : Activity() {
     }
 
     @Volatile private var routeStartedAt = 0L
+    /** 개발용 빌드에서만 쓰임: 전에 기록해 둔 경로 값으로 그린 예보. 목적지를 다시 고르면 풀림 */
+    private var replay: Forecast? = null
     private fun fresh() = routeStartedAt != 0L && SystemClock.elapsedRealtime() - routeStartedAt >= 1400
 
     private fun maybeForecast() {
@@ -559,7 +571,7 @@ class MainActivity : Activity() {
             stopGoSections = ts?.congestionItemList?.count { it.trafficCongestionType == TrafficCongestionType.HEAVY } ?: 0,
             durationSec = rs.duration,
         )
-        main.post { forecast = f; renderForecast(); main.postDelayed({ bringToFront() }, 600) }
+        main.post { forecast = replay ?: f; renderForecast(); main.postDelayed({ bringToFront() }, 600) }
     }
 
     /** NaviHelper.requestRoute opens the navigation app on top — try to bring our task back (Android blocks this from background). */
@@ -692,6 +704,18 @@ class MainActivity : Activity() {
         if (say != null && debug) voice.speakTest(say)
         // 개발용 빌드에서만: 시연 녹화 전에 출발 전 화면으로 — am start -n …/.MainActivity --es go plan
         if (debug && intent?.getStringExtra("go") == "plan" && phase == Phase.DIARY) show(Phase.PLAN)
+        // 개발용 빌드에서만: 단계별 모습 보기 — am start -n …/.MainActivity --ei look 0 (0 맑음 ~ 3 출렁, -1이면 원래대로)
+        // 개발용 빌드에서만: 전에 기록해 둔 경로 값으로 예보 카드를 다시 그림 (그날의 화면을 다시 볼 때)
+        //   am start -n …/.MainActivity --es fc "|23.0|14|13.0|10|4080"  (목적지(비우면 지금 목적지)|km|굽은 길|혼잡 km|가다 서다|초), off 이면 풀림
+        val fc = intent?.getStringExtra("fc")
+        if (debug && fc != null) {
+            val a = fc.split("|")
+            replay = if (a.size == 6) runCatching { Forecast(a[0].ifEmpty { destName }, a[1].toDouble(), a[2].toInt(), a[3].toDouble(), a[4].toInt(), a[5].toInt()) }.getOrNull() else null
+            replay?.let { forecast = it; log("기록해 둔 경로 값으로 예보를 다시 그림"); renderForecast() }
+        }
+        if (debug && intent?.hasExtra("look") == true) {
+            plan.lookLevel = intent.getIntExtra("look", -1).takeIf { it in 0..3 }; plan.invalidate()
+        }
     }
 
     override fun onDestroy() {
