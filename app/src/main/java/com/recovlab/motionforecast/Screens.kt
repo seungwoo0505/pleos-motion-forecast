@@ -22,6 +22,7 @@ import kotlin.math.sin
  * 화면 공통 값 — 색 · 글꼴 · 단계별 물빛.
  * 겉모습 v4: 물결 예보 카드 + 색 칸 승차감 일기 (시안: 3. 개발/v4_시안_261111, 형님 선택 11-11)
  * 색 v5: 짜임은 그대로, 색만 파랑 한 가지 계열로 — 흰 하늘 · 파랑 바다 · 검정 글자 (시안: 3. 개발/v5_시안_261114 색 1, 형님 선택 11-14)
+ * v6: 처음 한 번 보이는 한 장 요약(IntroScene) 추가 (시안: 3. 개발/v6_온보딩_시안_261115 온보딩 1, 형님 선택 11-15)
  */
 object Ui {
     fun rgb(v: Int): Int = (0xFF shl 24) or v
@@ -253,6 +254,93 @@ abstract class SceneView(context: Context) : View(context) {
             cubicTo(190f, 107f, 177f, 118f, 160f, 118f)
             close()
         }
+    }
+}
+
+/**
+ * 처음 한 번 — 한 장 요약: 출발 전 · 가는 동안 · 도착하면. [시작하기]를 누르면 다시 나오지 않음.
+ * (시안: 3. 개발/v6_온보딩_시안_261115 온보딩 1, 형님 선택 11-15)
+ */
+class IntroScene(context: Context) : SceneView(context) {
+    var onStart: () -> Unit = {}
+    private val spk = Path()
+
+    override fun scene(c: Canvas) {
+        val pal = Ui.PAL[2]
+        sky(c, pal)
+        val drift = 8f * sin(tSec * 0.25f)
+        cloud(c, 1200f + drift, 164f, 1.65f, alpha(Ui.INK, 0.06f))
+        cloud(c, 1200f + drift, 150f, 1.65f, Color.WHITE)
+        title(c, "승차감·흔들림 예보")
+        text(c, "오늘 길 흔들림을 날씨처럼", 72f, 132f, 40f, 500, Ui.SUB)
+        text(c, "출발 전에 미리 봐요", 66f, 196f, 132f, 800, Ui.INK, boxH = 153f, ls = -0.04f)
+        textFit(c, "목적지만 고르면, 가는 길이 얼마나 흔들릴지 알려 드려요.", 72f, 365f, 66f, 46f, 30f, 600, Ui.INK, 1536f)
+
+        sea(c, vh - 680f, pal, Ui.AMP[1], 1.3f)
+
+        // 세 칸: 출발 전 · 가는 동안 · 도착하면
+        val cw = (1536f - 40f) / 3f; val top = 712f + dy; val inW = cw - 64f
+        for (i in 0..2) {
+            val l = 72f + i * (cw + 20f); val x = l + 32f; val ill = top + 86f
+            rr(c, l, top, l + cw, top + 324f, 26f, alpha(Color.WHITE, 0.96f))
+            text(c, HEADS[i], x, top + 28f, 30f, 700, Ui.BLUE, boxH = 44f)
+            when (i) {
+                0 -> for (lv in 0..3) {          // 네 단계 그림
+                    val ix = x + lv * (inW - 60f) / 3f
+                    levelIcon(c, lv, ix, ill + 2f, 60f)
+                    text(c, Forecast.NAMES[lv], ix + 30f, ill + 64f, 26f, 500, Ui.SUB, Paint.Align.CENTER)
+                }
+                1 -> {                           // 목소리 한마디
+                    val tw2 = max(tw(SAY[0], 30f, 700), tw(SAY[1], 30f, 700))
+                    rr(c, x, ill, x + 20f + 64f + 18f + tw2 + 30f, ill + 104f, 26f, Ui.BLUE)
+                    speaker(c, x + 20f, ill + 20f, 64f)
+                    text(c, SAY[0], x + 102f, ill + 12f, 30f, 700, Color.WHITE, boxH = 40f)
+                    text(c, SAY[1], x + 102f, ill + 52f, 30f, 700, Color.WHITE, boxH = 40f)
+                }
+                else -> {                        // 일기의 색 칸 (40분 예시 주행을 2분씩 묶은 모습)
+                    val w = (inW - 19f * 4f) / 20f
+                    CELLS.forEachIndexed { k, lv -> rr(c, x + k * (w + 4f), ill + 18f, x + k * (w + 4f) + w, ill + 86f, 6f, Ui.TILE[lv]) }
+                }
+            }
+            text(c, LINES[i][0], x, top + 204f, 34f, 600, Ui.INK, boxH = 46f)
+            text(c, LINES[i][1], x, top + 250f, 34f, 600, Ui.INK, boxH = 46f)
+        }
+
+        // 아래 줄: 알림 두 줄 · 시작하기
+        val fy = 1072f + dy
+        text(c, "자체 기준으로 본 흔들림이에요 · 의학적 판정 아님", 72f, fy + 5.5f, 27f, 500, alpha(Color.WHITE, 0.92f), boxH = 40.5f)
+        text(c, "주행 기록은 이 차 안에만 남아요", 72f, fy + 46f, 27f, 500, alpha(Color.WHITE, 0.92f), boxH = 40.5f)
+        val bw = tw("시작하기", 36f, 700) + 156f
+        rr(c, 1608f - bw, fy, 1608f, fy + 92f, 46f, Color.WHITE)
+        text(c, "시작하기", 1608f - bw / 2f, fy, 36f, 700, Ui.INK, Paint.Align.CENTER, 92f)
+        hit(1608f - bw - 12f, fy - 10f, 1620f, fy + 102f) { onStart() }
+    }
+
+    /** 소리 그림 (원본 64 × 64): 스피커 + 물결 두 줄 */
+    private fun speaker(c: Canvas, x: Float, y: Float, size: Float) {
+        val s = size / 64f
+        c.save(); c.translate(x, y); c.scale(s, s)
+        p.shader = null; p.color = Color.WHITE; p.style = Paint.Style.FILL
+        spk.rewind(); spk.moveTo(14f, 26f); spk.lineTo(22f, 26f); spk.lineTo(33f, 17f); spk.lineTo(33f, 47f); spk.lineTo(22f, 38f); spk.lineTo(14f, 38f); spk.close()
+        c.drawPath(spk, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 4f; p.strokeCap = Paint.Cap.ROUND
+        spk.rewind(); spk.moveTo(40f, 24f); spk.cubicTo(44f, 28f, 44f, 36f, 40f, 40f)
+        spk.moveTo(46f, 18f); spk.cubicTo(53f, 25f, 53f, 39f, 46f, 46f)
+        c.drawPath(spk, p)
+        p.style = Paint.Style.FILL
+        c.restore()
+    }
+
+    companion object {
+        private val HEADS = arrayOf("출발 전", "가는 동안", "도착하면")
+        private val LINES = arrayOf(
+            arrayOf("가는 길 흔들림을", "네 단계로 알려 드려요"),
+            arrayOf("굽은 길 앞에서", "목소리로 짧게 알려 드려요"),
+            arrayOf("어디서 흔들렸는지", "일기로 보여 드려요"),
+        )
+        /** 목소리 안내 문장(VoiceCoach.LINE_CURVE)을 두 줄로 */
+        private val SAY = VoiceCoach.LINE_CURVE.split(", ").let { arrayOf(it[0] + ",", it.getOrElse(1) { "" }) }
+        private val CELLS = intArrayOf(2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 0, 1)
     }
 }
 

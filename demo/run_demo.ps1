@@ -23,7 +23,7 @@ function Stamp([string]$m) { Write-Host ("{0:HH:mm:ss.fff}  {1}" -f (Get-Date), 
 Put '/vehicle/gear?gear=Park'; Ctl 0 0
 Put '/vehicle/body?door_rl=false'; Put '/vehicle/body?door_fl=false'
 Put '/vehicle/seat?kind=occupied&value=true&area=rear_left'
-cmd /c ""$adb" shell am start -n com.recovlab.motionforecast/.MainActivity --es go plan >nul 2>nul"   # 앱을 앞으로 (일기 화면이면 출발 전 화면으로 — 개발용 빌드)
+cmd /c ""$adb" shell am start -n com.recovlab.motionforecast/.MainActivity --es go plan --es intro skip >nul 2>nul"   # 앱을 앞으로 (일기 화면이면 출발 전 화면으로 — 개발용 빌드)
 
 # 위치: GPX를 1초에 한 점씩 (에뮬레이터 콘솔 geo fix)
 $gpxJob = Start-Process powershell -ArgumentList '-NoProfile', '-File', "$PSScriptRoot\play_route.ps1", '-Gpx', $Gpx -WindowStyle Hidden -PassThru

@@ -77,6 +77,10 @@ class MainActivity : Activity() {
     private var passenger: Passenger? = null
     private var askedVoice = false
 
+    // ---- 처음 한 번 보이는 한 장 요약 ([시작하기]를 누르면 다시 나오지 않음) ----
+    private val prefs by lazy { getSharedPreferences("motionforecast", MODE_PRIVATE) }
+    private var introOpen = false
+
     // ---- live vehicle values ----
     @Volatile private var speedKmh = 0.0
     @Volatile private var gear = VehicleGear.GEAR_PARK
@@ -121,6 +125,7 @@ class MainActivity : Activity() {
     private var navi: NaviHelper? = null
 
     // ---- views (그림은 Screens.kt) ----
+    private lateinit var intro: IntroScene
     private lateinit var plan: PlanScene
     private lateinit var wait: WaitScene
     private lateinit var diary: DiaryScene
@@ -141,7 +146,10 @@ class MainActivity : Activity() {
         startFused()
         startNavi()
         main.post(tick)
+        introOpen = !prefs.getBoolean(INTRO_DONE, false)
+        if (introOpen) log("intro 보임 (처음 실행)")
         show(Phase.PLAN)
+        handleIntro(intent)
     }
 
     override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
@@ -213,7 +221,13 @@ class MainActivity : Activity() {
         // ---------- ③ 도착 후 — 승차감 일기 ----------
         diary = DiaryScene(this).apply { onNewTrip = { show(Phase.PLAN) } }
 
-        for (v in listOf(plan, settingsView, wait, diary)) root.addView(v, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        // ---------- 처음 한 번 — 한 장 요약 ----------
+        intro = IntroScene(this).apply {
+            onStart = { closeIntro("시작하기") }
+            contentDescription = "처음 안내. 출발 전에는 가는 길 흔들림을 네 단계로 알려 드려요. 가는 동안에는 굽은 길 앞에서 목소리로 짧게 알려 드려요. 도착하면 어디서 흔들렸는지 일기로 보여 드려요. 시작하기를 누르세요."
+        }
+
+        for (v in listOf(plan, settingsView, wait, diary, intro)) root.addView(v, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         setContentView(root)
     }
 
@@ -225,6 +239,25 @@ class MainActivity : Activity() {
         // 처음 고를 때 한 번만 "목소리 안내를 켤까요?" (기획서 v2 음성 사양: 기본 꺼짐)
         if (!voice.enabled && !askedVoice) { askedVoice = true; plan.askVoice = true }
         plan.invalidate()
+    }
+
+    private fun closeIntro(why: String) {
+        if (!introOpen) return
+        introOpen = false
+        prefs.edit().putBoolean(INTRO_DONE, true).apply()
+        log("intro 닫음 ($why)")
+        show(phase)
+    }
+
+    /**
+     * 처음 안내를 건너뛰기 — am start -n …/.MainActivity --es intro skip  (시연 스크립트가 씀. 안내 화면만 넘기는 것이라 모든 빌드에서 됨)
+     * 개발용 빌드에서만: 다시 보기 — --es intro show
+     */
+    private fun handleIntro(intent: Intent?) {
+        when (intent?.getStringExtra("intro")) {
+            "skip" -> closeIntro("intent")
+            "show" -> if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) { introOpen = true; show(phase) }
+        }
     }
 
     private fun setVoice(on: Boolean, why: String) { voice.enabled = on; plan.voiceOn = on; plan.invalidate(); log("voice enabled=$on ($why)") }
@@ -241,7 +274,9 @@ class MainActivity : Activity() {
     private fun show(p: Phase) {
         if (p != phase) settingsOpen = false
         phase = p
-        plan.visibility = if (p == Phase.PLAN && !settingsOpen) View.VISIBLE else View.GONE
+        val introNow = introOpen && p == Phase.PLAN   // 처음 안내는 출발 전 화면 위에만
+        intro.visibility = if (introNow) View.VISIBLE else View.GONE
+        plan.visibility = if (p == Phase.PLAN && !settingsOpen && !introNow) View.VISIBLE else View.GONE
         settingsView.visibility = if (p == Phase.PLAN && settingsOpen) View.VISIBLE else View.GONE
         wait.visibility = if (p == Phase.DRIVE || p == Phase.ARRIVING) View.VISIBLE else View.GONE
         wait.arriving = p == Phase.ARRIVING; wait.level = forecast?.level
@@ -698,6 +733,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent); log("onNewIntent")
+        handleIntro(intent)
         // 개발용 빌드에서만: 문장 길이 재기 — am start -n …/.MainActivity --es say "문장"
         val say = intent?.getStringExtra("say")
         val debug = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -741,6 +777,7 @@ class MainActivity : Activity() {
     companion object {
         private const val TAG = "MotionForecast"
         private const val EXAMPLE_ASSET = "example_trip_40min.csv"
+        private const val INTRO_DONE = "intro_done"
         private val DESTINATIONS = listOf(
             Triple("판교역", 37.394761, 127.111217),
             Triple("서울역", 37.554648, 126.970702),

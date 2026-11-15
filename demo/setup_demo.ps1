@@ -8,7 +8,7 @@ function Front { cmd /c "`"$adb`" shell am start -n com.recovlab.motionforecast/
 
 & $adb shell am force-stop com.recovlab.pleosdash      # 시험 앱이 위치 서비스를 먼저 쓰면 새 앱에 위치가 안 옴
 & $adb shell am force-stop com.recovlab.motionforecast
-& $adb shell am start -n com.recovlab.motionforecast/.MainActivity | Out-Null; Start-Sleep 6
+& $adb shell am start -n com.recovlab.motionforecast/.MainActivity --es intro skip | Out-Null; Start-Sleep 6
 Tap 2254 150 1200           # 목적지 알약 → 고르기
 Tap 2200 (254 + 88 * $Dest) 15000   # 0 판교역 · 1 서울역 · 2 강릉역 (내비 앱이 앞으로 나옴)
 Front

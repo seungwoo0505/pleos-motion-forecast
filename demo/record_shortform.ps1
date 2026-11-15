@@ -41,7 +41,7 @@ if ($Seg -contains 'ui') {
     Write-Host '== ui: 처음 화면 → 목적지 고르기 → 예보 카드(길게) → 탑승자 · 목소리'
     & $adb shell am force-stop com.recovlab.pleosdash
     & $adb shell am force-stop $pkg
-    & $adb shell am start -n $pkg/.MainActivity | Out-Null; Start-Sleep 7
+    & $adb shell am start -n $pkg/.MainActivity --es intro skip | Out-Null; Start-Sleep 7
     RecStart 'ui' 80
     Mark '처음 화면'; Start-Sleep 4
     Mark '목적지 알약 누름'; Tap 2254 150 2.5

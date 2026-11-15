@@ -11,7 +11,7 @@ $destName = @('판교역', '서울역', '강릉역')[$Dest]
 
 & $adb shell am force-stop com.recovlab.pleosdash
 & $adb shell am force-stop com.recovlab.motionforecast
-& $adb shell am start -n com.recovlab.motionforecast/.MainActivity | Out-Null; Start-Sleep 6
+& $adb shell am start -n com.recovlab.motionforecast/.MainActivity --es intro skip | Out-Null; Start-Sleep 6
 if (-not $CardOnly) { Shot '00_처음화면' }
 Tap 2254 150 1200                    # 목적지 알약
 if (-not $CardOnly) { Shot '00_목적지_고르기' }

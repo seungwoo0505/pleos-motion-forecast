@@ -12,7 +12,7 @@
 
 ## APK 파일 위치
 
-`apk/` 폴더의 `*_release.apk` (release 빌드, 버전 0.5, 패키지 `com.recovlab.motionforecast`)
+`apk/` 폴더의 `*_release.apk` (release 빌드, 버전 0.6, 패키지 `com.recovlab.motionforecast`)
 
 ## 실행 방법
 
@@ -21,7 +21,7 @@
    ```
    adb install -r apk/<파일 이름>_release.apk
    ```
-3. 앱 목록에서 **승차감·흔들림 예보**를 엽니다. 처음 실행할 때 위치 · 차량 속도 권한을 허용합니다.
+3. 앱 목록에서 **승차감·흔들림 예보**를 엽니다. 처음 실행할 때 위치 · 차량 속도 권한을 허용합니다. 처음 한 번은 앱이 하는 일을 한 장으로 알려 주는 화면(출발 전 · 가는 동안 · 도착하면)이 나오며, **시작하기**를 누르면 다시 나오지 않습니다.
    ```
    adb shell am start -n com.recovlab.motionforecast/.MainActivity
    ```
